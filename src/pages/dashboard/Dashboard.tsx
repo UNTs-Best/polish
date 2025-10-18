@@ -1,2 +1,0 @@
-// Main dashboard page
-
