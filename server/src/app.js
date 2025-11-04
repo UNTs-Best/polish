@@ -7,17 +7,23 @@ import authRoutes from "./routes/auth.routes.js";
 import docRoutes from "./routes/document.routes.js";
 import llmRoutes from "./routes/llm.routes.js";
 import errorHandler from "./middleware/error.middleware.js";
+import uploadRoutes from "./routes/upload.routes.js";
+import authRoutes from "./routes/auth.routes.js";
+
 
 dotenv.config();
+
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
+app.use("/api/upload", uploadRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/docs", docRoutes);
 app.use("/api/llm", llmRoutes);
+
 
 app.use(errorHandler);
 
