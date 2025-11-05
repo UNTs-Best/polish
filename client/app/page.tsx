@@ -347,19 +347,23 @@ export default function LandingPage() {
               >
                 Resources
               </Link>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-              >
-                Sign In
-              </Button>
-              <Button
-                size="sm"
-                className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-              >
-                Get Started
-              </Button>
+              <Link href="/auth/login">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+                >
+                  Sign In
+                </Button>
+              </Link>
+              <Link href="/auth/signup">
+                <Button
+                  size="sm"
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+                >
+                  Get Started
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
