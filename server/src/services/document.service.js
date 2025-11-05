@@ -27,3 +27,7 @@ export async function updateDocument(id, updates) {
 export async function deleteDocument(id) {
   return await Document.findByIdAndDelete(id);
 }
+
+export async function getDocumentbyId(id) {
+  return await Document.findById(id);
+}
