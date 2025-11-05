@@ -23,7 +23,9 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/docs", docRoutes);
 app.use("/api/llm", llmRoutes);
-
+app.use('/*', (req, res) => {
+  res.status(404).json({ message: "Endpoint not found" });
+});
 
 app.use(errorHandler);
 
