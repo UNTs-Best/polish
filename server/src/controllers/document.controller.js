@@ -46,7 +46,8 @@ export const getDocuments = async (req, res) => {
     const docs = await getUserDocuments(ownerId);
     res.json(docs);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error(err);
+    res.status(503).json({ message: 'Database unavailable' });
   }
 };
 
@@ -60,7 +61,8 @@ export const renameDocument = async (req, res) => {
     const updated = await updateDocument(id, updates);
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error(err);
+    res.status(503).json({ message: 'Database unavailable' });
   }
 };
 
@@ -73,6 +75,7 @@ export const removeDocument = async (req, res) => {
     await deleteDocument(id);
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error(err);
+    res.status(503).json({ message: 'Database unavailable' });
   }
 };

@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import fs from "fs";
 import { uploadFileToBlob } from "../utils/azureBlob.js";
 
 const router = express.Router();
