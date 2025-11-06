@@ -6,16 +6,21 @@ import fs from "fs";
 
 dotenv.config();
 
-const account = process.env.AZURE_STORAGE_ACCOUNT;
-const key = process.env.AZURE_STORAGE_KEY;
 const containerName = process.env.AZURE_CONTAINER_NAME;
-const blobServiceClient = new BlobServiceClient(
-  `https://${account}.blob.core.windows.net`,
-  new Azure.StorageSharedKeyCredential(account, key)
-);
+const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+const publicBaseUrl = process.env.AZURE_STORAGE_URL; // optional: e.g. https://<account>.blob.core.windows.net
+
+if (!connectionString) {
+  console.warn("AZURE_STORAGE_CONNECTION_STRING not set; Azure Blob operations will fail.");
+}
+
+const blobServiceClient = connectionString
+  ? BlobServiceClient.fromConnectionString(connectionString)
+  : null;
 
 export async function uploadFileToBlob(filePath, originalName) {
   try {
+    if (!blobServiceClient) throw new Error("BlobServiceClient not configured");
     const containerClient = blobServiceClient.getContainerClient(containerName);
     const blobName = `${uuidv4()}-${path.basename(originalName)}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
@@ -23,7 +28,7 @@ export async function uploadFileToBlob(filePath, originalName) {
     console.log(`✅ File uploaded to Azure Blob: ${blobName}`);
     return {
       blobName,
-      url: `${process.env.AZURE_STORAGE_URL}/${containerName}/${blobName}`,
+      url: publicBaseUrl ? `${publicBaseUrl}/${containerName}/${blobName}` : blockBlobClient.url,
       etag: uploadBlobResponse.etag,
     };
   } catch (err) {

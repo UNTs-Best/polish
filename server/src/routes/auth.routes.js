@@ -1,43 +1,16 @@
 import express from "express";
-import jwtDecode from "jwt-decode";
-import { checkJwt } from "../middleware/auth0.middleware.js";
+import { register, login, me } from "../controllers/auth.controller.js";
+import { requireAuth } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-/**
- *  @route   POST /api/auth/register
- *  @desc    registers a new user in Auth0
- */
-router.post("/register", (req, res) => {
-  res.status(501).json({
-    message: "Registration handled by Auth0 Universal Login on frontend.",
-  });
-});
+// Local registration
+router.post("/register", register);
 
-/**
- *  @route   POST /api/auth/login
- *  @desc    Verifies Auth0-issued access token and returns user info
- */
-router.post("/login", checkJwt, (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: "Missing token" });
+// Local login -> issues JWT
+router.post("/login", login);
 
-    const token = authHeader.split(" ")[1];
-    const decoded = jwtDecode(token);
-
-    res.json({
-      message: "authenticated with Auth0",
-      user: {
-        sub: decoded.sub,
-        email: decoded.email,
-        name: decoded.name,
-      },
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(401).json({ message: "Invalid token" });
-  }
-});
+// Current user from our JWT
+router.get("/me", requireAuth, me);
 
 export default router;
