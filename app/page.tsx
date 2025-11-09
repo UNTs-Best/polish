@@ -347,6 +347,12 @@ export default function LandingPage() {
               >
                 Resources
               </Link>
+              <Link
+                href="/dashboard"
+                className="text-slate-600 hover:text-slate-800 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 rounded"
+              >
+                Dashboard
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
