@@ -4,13 +4,14 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, Download, Sparkles, Check, X, Undo, Menu, Upload } from "lucide-react"
+import { ArrowLeft, Download, Sparkles, Check, X, Undo, Menu, Upload, Clock, Save } from "lucide-react"
 import { AIChat } from "@/components/ai-chat"
 import { ExportDialog } from "@/components/export-dialog"
 import { FileUpload } from "@/components/file-upload"
+import { VersionHistory } from "@/components/version-history"
 import Link from "next/link"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
+import { useAutosave } from "@/hooks/use-autosave"
+import { useToast } from "@/hooks/use-toast"
 
 interface SuggestedChanges {
   type: string
@@ -65,6 +66,13 @@ interface DocumentContent {
   skills: string
 }
 
+interface DocumentVersion {
+  id: string
+  timestamp: string
+  description: string
+  content: DocumentContent
+}
+
 export default function EditorPage() {
   const [selectedText, setSelectedText] = useState("")
   const [aiSuggestion, setAiSuggestion] = useState("")
@@ -75,6 +83,15 @@ export default function EditorPage() {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([])
   const [showPendingChanges, setShowPendingChanges] = useState(false)
+  const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([])
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [documentId, setDocumentId] = useState<string | null>(null)
+  const [isCosmosDbEnabled, setIsCosmosDbEnabled] = useState(false)
+  const [cosmosDbError, setCosmosDbError] = useState<string | null>(null)
+  const { toast } = useToast()
+
   const [documentContent, setDocumentContent] = useState<DocumentContent>({
     name: "Jake Ryan",
     title: "Software Engineer",
@@ -138,11 +155,188 @@ export default function EditorPage() {
   const [originalDocumentContent, setOriginalDocumentContent] = useState<DocumentContent | null>(null)
 
   useEffect(() => {
+    const checkCosmosDb = async () => {
+      try {
+        const response = await fetch("/api/documents", {
+          method: "GET",
+          headers: { "x-user-id": "anonymous" },
+        })
+
+        if (response.ok) {
+          setIsCosmosDbEnabled(true)
+          console.log("[v0] Cosmos DB is available")
+
+          // Try to load the most recent document
+          const data = await response.json()
+          if (data.documents && data.documents.length > 0) {
+            const latestDoc = data.documents[0]
+            setDocumentId(latestDoc.id)
+            setDocumentContent(latestDoc.content)
+            console.log("[v0] Loaded document from Cosmos DB:", latestDoc.id)
+          }
+        } else {
+          throw new Error("Cosmos DB not configured")
+        }
+      } catch (error) {
+        console.log("[v0] Cosmos DB not available, using localStorage fallback")
+        setIsCosmosDbEnabled(false)
+        setCosmosDbError(error instanceof Error ? error.message : "Unknown error")
+
+        // Fallback to localStorage
+        loadFromLocalStorage()
+      }
+    }
+
+    checkCosmosDb()
+  }, [])
+
+  const loadFromLocalStorage = () => {
+    const savedDoc = localStorage.getItem("polishEditor_document")
+    const savedVersions = localStorage.getItem("polishEditor_versions")
+
+    if (savedDoc) {
+      try {
+        const parsed = JSON.parse(savedDoc)
+        setDocumentContent(parsed)
+        console.log("[v0] Loaded saved document from localStorage")
+      } catch (error) {
+        console.error("[v0] Failed to load saved document:", error)
+      }
+    }
+
+    if (savedVersions) {
+      try {
+        const parsed = JSON.parse(savedVersions)
+        setDocumentVersions(parsed)
+        console.log("[v0] Loaded version history from localStorage")
+      } catch (error) {
+        console.error("[v0] Failed to load version history:", error)
+      }
+    } else {
+      const initialVersion: DocumentVersion = {
+        id: "v-initial",
+        timestamp: new Date().toISOString(),
+        description: "Initial version",
+        content: documentContent,
+      }
+      setDocumentVersions([initialVersion])
+    }
+
+    setLastSavedAt(new Date())
+  }
+
+  const handleAutosave = async () => {
+    setIsSaving(true)
+    try {
+      // Always save to localStorage as a fallback
+      localStorage.setItem("polishEditor_document", JSON.stringify(documentContent))
+      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      console.log("[v0] Saved to localStorage")
+
+      if (isCosmosDbEnabled) {
+        // Save to Cosmos DB
+        const response = await fetch("/api/documents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": "anonymous",
+          },
+          body: JSON.stringify({
+            id: documentId,
+            title: documentContent.name,
+            content: documentContent,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (!documentId) {
+            setDocumentId(data.document.id)
+          }
+          setLastSavedAt(new Date())
+          console.log("[v0] Document saved to Cosmos DB successfully")
+        } else {
+          const error = await response.json()
+          console.error("[v0] Cosmos DB save failed:", error)
+          toast({
+            title: "Save Warning",
+            description: "Saved locally but cloud sync failed. Your changes are safe.",
+            variant: "default",
+          })
+        }
+      } else {
+        // Just localStorage
+        setLastSavedAt(new Date())
+        console.log("[v0] Document saved to localStorage (Cosmos DB not available)")
+      }
+    } catch (error) {
+      console.error("[v0] Autosave failed:", error)
+      toast({
+        title: "Save Error",
+        description: "Failed to save. Your changes are stored locally.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const { debouncedSave, triggerSave } = useAutosave({
+    delay: 3000,
+    onSave: handleAutosave,
+    enabled: true,
+  })
+
+  useEffect(() => {
+    if (documentVersions.length > 0) {
+      debouncedSave()
+    }
+  }, [documentContent, debouncedSave])
+
+  const createVersionSnapshot = async (description: string) => {
+    const newVersion: DocumentVersion = {
+      id: `v-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      description,
+      content: { ...documentContent },
+    }
+    setDocumentVersions((prev) => [newVersion, ...prev])
+    console.log("[v0] Created version snapshot:", newVersion.id)
+
+    // Save version to Cosmos DB if available
+    if (isCosmosDbEnabled && documentId) {
+      try {
+        const response = await fetch(`/api/documents/${documentId}/versions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": "anonymous",
+          },
+          body: JSON.stringify({
+            content: documentContent,
+            changeDescription: description,
+          }),
+        })
+
+        if (response.ok) {
+          console.log("[v0] Version saved to Cosmos DB")
+        }
+      } catch (error) {
+        console.error("[v0] Failed to save version to Cosmos DB:", error)
+      }
+    }
+  }
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "e") {
         e.preventDefault()
         const exportButton = document.querySelector("[data-export-trigger]") as HTMLElement
         exportButton?.click()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "h") {
+        e.preventDefault()
+        setShowVersionHistory(true)
       }
     }
 
@@ -202,7 +396,6 @@ export default function EditorPage() {
     if (changes.type === "delete_research_role") {
       setDocumentContent((prev) => {
         const updated = { ...prev }
-        // Remove the first experience entry (Research Assistant role)
         updated.experience = prev.experience.filter((exp, idx) => idx !== 0)
         return updated
       })
@@ -258,6 +451,7 @@ export default function EditorPage() {
   const handleAcceptChanges = () => {
     setPendingChanges([])
     setShowPendingChanges(false)
+    createVersionSnapshot("Applied AI suggestions")
     console.log("[v0] Changes accepted and applied permanently")
   }
 
@@ -268,6 +462,7 @@ export default function EditorPage() {
     }
     setPendingChanges([])
     setShowPendingChanges(false)
+    createVersionSnapshot("Reverted changes")
     console.log("[v0] Changes reverted to original state")
   }
 
@@ -396,7 +591,101 @@ export default function EditorPage() {
       skills:
         "Languages: Go, Python, JavaScript, TypeScript, SQL, Swift | Developer Tools: AWS, Docker, Git, Linux/Unix, CI/CD, Google Cloud, PostgreSQL, MongoDB, Azure, Jupyter | Libraries: React, Flask, scikit-learn, UIKit, Next.js, Django, numpy, pandas, Matplotlib, TensorFlow",
     })
+
+    createVersionSnapshot(`Uploaded file: ${file.name}`)
+    setTimeout(() => {
+      triggerSave()
+    }, 100)
   }
+
+  const handleRestoreVersion = async (version: DocumentVersion) => {
+    setDocumentContent(version.content)
+    await createVersionSnapshot(`Restored to: ${version.description}`)
+    console.log("[v0] Restored version:", version.id)
+  }
+
+  const handleResetVersionHistory = async () => {
+    try {
+      // Clear localStorage
+      localStorage.removeItem("polishEditor_versions")
+      console.log("[v0] Cleared version history from localStorage")
+
+      // Clear Cosmos DB versions if enabled
+      if (isCosmosDbEnabled && documentId) {
+        try {
+          // Delete all versions for this document from Cosmos DB
+          const response = await fetch(`/api/documents/${documentId}/versions`, {
+            method: "DELETE",
+            headers: {
+              "x-user-id": "anonymous",
+            },
+          })
+
+          if (response.ok) {
+            console.log("[v0] Cleared version history from Cosmos DB")
+          }
+        } catch (error) {
+          console.error("[v0] Failed to clear Cosmos DB versions:", error)
+        }
+      }
+
+      // Set to empty array - no versions at all
+      setDocumentVersions([])
+
+      toast({
+        title: "Version History Cleared",
+        description: "All version history has been permanently deleted.",
+      })
+
+      console.log("[v0] Version history completely cleared")
+    } catch (error) {
+      console.error("[v0] Error resetting version history:", error)
+      toast({
+        title: "Reset Failed",
+        description: "Failed to reset version history. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const formatLastSaved = () => {
+    if (!lastSavedAt) return "Not saved yet"
+    const now = new Date()
+    const diffMs = now.getTime() - lastSavedAt.getTime()
+    const diffSecs = Math.floor(diffMs / 1000)
+    const diffMins = Math.floor(diffMs / 60000)
+
+    if (diffSecs < 10) return "Saved just now"
+    if (diffSecs < 60) return `Saved ${diffSecs} seconds ago`
+    if (diffMins < 60) return `Saved ${diffMins} minute${diffMins > 1 ? "s" : ""} ago`
+    return `Saved at ${lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+  }
+
+  useEffect(() => {
+    if (documentVersions.length > 0) {
+      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+    }
+  }, [documentVersions])
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      localStorage.setItem("polishEditor_document", JSON.stringify(documentContent))
+      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      console.log("[v0] Saved on beforeunload")
+      triggerSave()
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload)
+
+    // Cleanup: save immediately when component unmounts (e.g., clicking Back button)
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      localStorage.setItem("polishEditor_document", JSON.stringify(documentContent))
+      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      console.log("[v0] Saved on unmount")
+      triggerSave()
+    }
+  }, [triggerSave, documentContent, documentVersions])
 
   return (
     <div className="min-h-screen bg-background">
@@ -419,9 +708,35 @@ export default function EditorPage() {
             {uploadedFileName && (
               <span className="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">{uploadedFileName}</span>
             )}
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              {isSaving ? (
+                <>
+                  <Save className="w-3 h-3 animate-pulse" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3 h-3 text-green-600" />
+                  <span>{formatLastSaved()}</span>
+                  {isCosmosDbEnabled && (
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Cloud Sync</span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowVersionHistory(true)}
+              className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 bg-transparent border-slate-300 text-slate-700 hover:bg-slate-50"
+              aria-label="View version history (Keyboard shortcut: Ctrl+H or Cmd+H)"
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              History ({documentVersions.length})
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -447,60 +762,7 @@ export default function EditorPage() {
         </div>
       </header>
 
-      <div
-        className="bg-slate-100 border-b border-slate-200 px-6 py-2"
-        role="status"
-        aria-live="polite"
-        aria-label="Testing and smoke checks status"
-      >
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center space-x-6">
-            <span className="font-semibold text-slate-700">Testing/Smoke Checks:</span>
-            <div className="flex items-center space-x-1">
-              <Check className="w-3 h-3 text-green-600" />
-              <span className="text-slate-600">Landing</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Check className="w-3 h-3 text-green-600" />
-              <span className="text-slate-600">Chat Mock</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Check className="w-3 h-3 text-green-600" />
-              <span className="text-slate-600">Export Mock</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Check className="w-3 h-3 text-green-600" />
-              <span className="text-slate-600">Upload Mock</span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="chat-error"
-                checked={simulateChatError}
-                onCheckedChange={setSimulateChatError}
-                aria-label="Toggle chat error simulation"
-              />
-              <Label htmlFor="chat-error" className="text-slate-600 cursor-pointer">
-                Simulate Chat Error
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="export-error"
-                checked={simulateExportError}
-                onCheckedChange={setSimulateExportError}
-                aria-label="Toggle export error simulation"
-              />
-              <Label htmlFor="export-error" className="text-slate-600 cursor-pointer">
-                Simulate Export Error
-              </Label>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex h-[calc(100vh-73px-41px)]">
+      <div className="flex h-[calc(100vh-73px)]">
         <div className="flex-1 flex flex-col">
           <div className="border-b border-slate-200/50 px-6 py-3 bg-slate-50/30">
             <div className="flex items-center justify-between">
@@ -727,6 +989,14 @@ export default function EditorPage() {
       </div>
 
       {showUploadDialog && <FileUpload onFileUpload={handleFileUpload} onClose={() => setShowUploadDialog(false)} />}
+
+      <VersionHistory
+        isOpen={showVersionHistory}
+        onClose={() => setShowVersionHistory(false)}
+        onRestore={handleRestoreVersion}
+        currentVersions={documentVersions}
+        onReset={handleResetVersionHistory} // Added reset handler prop
+      />
     </div>
   )
 }

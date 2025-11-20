@@ -1,0 +1,312 @@
+openapi: 3.1.0
+info:
+  title: Polish API
+  version: 1.0.0
+  description: >
+    Backend API specification for *Polish* — an AI-powered collaborative document editor.
+    Includes authentication, document CRUD, and AI assistance endpoints.
+  contact:
+    name: Polish Backend Team
+    url: https://github.com/arnav-verma/polish
+    email: arnav@example.com
+
+servers:
+  - url: http://localhost:5000/api
+    description: Local development server
+
+tags:
+  - name: Auth
+    description: User authentication and authorization
+  - name: Documents
+    description: Document CRUD and collaboration
+  - name: LLM
+    description: AI editing and suggestion features
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid input
+
+  /auth/login:
+    post:
+      summary: Authenticate user and return JWT
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+
+  /docs:
+    get:
+      summary: Get all documents for the authenticated user
+      tags: [Documents]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Document'
+    post:
+      summary: Create a new document
+      tags: [Documents]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreateRequest'
+      responses:
+        '201':
+          description: Document created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+
+  /docs/{id}:
+    get:
+      summary: Get a document by ID
+      tags: [Documents]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '404':
+          description: Document not found
+    put:
+      summary: Update a document
+      tags: [Documents]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUpdateRequest'
+      responses:
+        '200':
+          description: Updated document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+    delete:
+      summary: Delete a document
+      tags: [Documents]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Document deleted successfully
+
+  /llm/suggest:
+    post:
+      summary: Suggest writing improvements for a given text
+      tags: [LLM]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LLMSuggestRequest'
+      responses:
+        '200':
+          description: AI-generated suggestion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMSuggestResponse'
+
+  /llm/summarize:
+    post:
+      summary: Generate a summary of the provided document text
+      tags: [LLM]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LLMSummarizeRequest'
+      responses:
+        '200':
+          description: Summary generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMSummarizeResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+      required: [email, password]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresIn:
+          type: integer
+          example: 86400
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        owner:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DocumentCreateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+      required: [title]
+
+    DocumentUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+
+    LLMSuggestRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        tone:
+          type: string
+          enum: [formal, casual, persuasive, concise]
+      required: [text]
+
+    LLMSuggestResponse:
+      type: object
+      properties:
+        suggestion:
+          type: string
+        model:
+          type: string
+          example: gpt-4o-mini
+
+    LLMSummarizeRequest:
+      type: object
+      properties:
+        text:
+          type: string
+      required: [text]
+
+    LLMSummarizeResponse:
+      type: object
+      properties:
+        summary:
+          type: string
+        word_count:
+          type: integer

@@ -143,6 +143,7 @@ npm start
 - **Style Suggestions**: Get recommendations for improving document structure and flow
 - **Grammar Enhancement**: Automatic grammar and spelling corrections
 - **Tone Adjustment**: Modify the tone of your document (professional, casual, formal, etc.)
+- **Job Description Keyword Adder**: Modify your resume to specific job descriptions adding nessecary keywords
 
 ### Export Options
 
