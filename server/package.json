@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "c8 -r text -r lcov node --test --test-reporter=spec"
+    "build": "tsc",
+    "test": "c8 -r text -r lcov node --test --test-reporter=spec src/test/*.test.js",
+    "test:watch": "node --test --watch src/test/*.test.js",
+    "test:coverage": "c8 -r html -r lcov node --test src/test/*.test.js"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +29,7 @@
     "jwt-decode": "^4.0.0",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
     "socket.io": "^4.8.1",
     "uuid": "^13.0.0"
   },
