@@ -2,87 +2,97 @@ openapi: 3.1.0
 info:
   title: Polish API
   version: 1.0.0
-  description: >
-    Backend API specification for *Polish* — an AI-powered collaborative document editor.
-    Includes authentication, document CRUD, and AI assistance endpoints.
+  description: |
+    Production-grade backend API for **Polish** — the AI-powered, real-time collaborative document editor.
+    Features: Auth0 JWT, Cosmos DB, SignalR streaming, OpenAI gpt-4o, multi-format export, version control, templates, accessibility (WCAG 2.1 AA).
   contact:
-    name: Polish Backend Team
+    name: UNT's Best — Arnav Verma
     url: https://github.com/arnav-verma/polish
-    email: arnav@example.com
+    email: arnav@polish.app
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: http://localhost:5000/api
-    description: Local development server
+  - url: https://api.polish.app/v1
+    description: Production (Azure App Service)
+  - url: http://localhost:5000/v1
+    description: Local development
 
 tags:
   - name: Auth
-    description: User authentication and authorization
+    description: Authentication via Auth0
   - name: Documents
-    description: Document CRUD and collaboration
+    description: CRUD + real-time collaboration
+  - name: Versions
+    description: Document history and restore
   - name: LLM
-    description: AI editing and suggestion features
+    description: AI-powered editing, summarization, templates
+  - name: Export
+    description: PDF, DOCX, LaTeX, Markdown
+  - name: Templates
+    description: AI-generated document starters
+  - name: Realtime
+    description: SignalR + WebSocket + SSE
+  - name: Webhooks
+    description: Event notifications
+  - name: Audit
+    description: Security and activity logs
 
 paths:
-  /auth/register:
-    post:
-      summary: Register a new user
+  # ──────────────────────────────────────
+  # AUTH (Auth0)
+  # ──────────────────────────────────────
+  /auth/me:
+    get:
+      summary: Get current user profile
       tags: [Auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
-      responses:
-        '201':
-          description: User created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserResponse'
-        '400':
-          description: Invalid input
-
-  /auth/login:
-    post:
-      summary: Authenticate user and return JWT
-      tags: [Auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
-          description: Authentication successful
+          description: Auth0 user profile
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          description: Invalid credentials
+                $ref: '#/components/schemas/UserProfile'
 
+  /auth/logout:
+    post:
+      summary: Invalidate session (client-side)
+      tags: [Auth]
+      responses:
+        '204': { description: Logged out }
+
+  # ──────────────────────────────────────
+  # DOCUMENTS
+  # ──────────────────────────────────────
   /docs:
     get:
-      summary: Get all documents for the authenticated user
+      summary: List all documents for user
       tags: [Documents]
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string }
       responses:
         '200':
-          description: List of documents
+          description: Paginated document list
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Document'
+                $ref: '#/components/schemas/DocumentList'
+
     post:
-      summary: Create a new document
+      summary: Create new document
       tags: [Documents]
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -99,90 +109,130 @@ paths:
 
   /docs/{id}:
     get:
-      summary: Get a document by ID
+      summary: Get document by ID
       tags: [Documents]
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       responses:
         '200':
-          description: Document details
+          description: Full document
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Document'
-        '404':
-          description: Document not found
-    put:
-      summary: Update a document
-      tags: [Documents]
-      security:
-        - bearerAuth: []
+
+    patch:
+      summary: Partial update (for real-time OT)
+      tags: [Documents, Realtime]
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DocumentUpdateRequest'
+              $ref: '#/components/schemas/DocumentPatch'
       responses:
         '200':
-          description: Updated document
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Document'
+          description: Patch applied
+
     delete:
-      summary: Delete a document
+      summary: Delete document
       tags: [Documents]
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       responses:
-        '204':
-          description: Document deleted successfully
+        '204': { description: Deleted }
 
+  # ──────────────────────────────────────
+  # VERSIONS
+  # ──────────────────────────────────────
+  /docs/{id}/versions:
+    get:
+      summary: List versions
+      tags: [Versions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Version'
+
+  /docs/{id}/versions/{versionId}/restore:
+    post:
+      summary: Restore specific version
+      tags: [Versions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+        - name: versionId
+          in: path
+          required: true
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+
+  # ──────────────────────────────────────
+  # LLM ENDPOINTS
+  # ──────────────────────────────────────
   /llm/suggest:
     post:
-      summary: Suggest writing improvements for a given text
+      summary: Get AI writing suggestions
       tags: [LLM]
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LLMSuggestRequest'
+        $ref: '#/components/requestBodies/LLMSuggest'
       responses:
         '200':
-          description: AI-generated suggestion
+          $ref: '#/components/responses/LLMSuggest'
+
+  /llm/stream:
+    post:
+      summary: Stream AI response (SSE)
+      tags: [LLM, Realtime]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        $ref: '#/components/requestBodies/LLMStream'
+      responses:
+        '200':
+          description: text/event-stream
           content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: '#/components/schemas/LLMSuggestResponse'
+                type: string
+                example: data: {"delta": "Hello", "finish_reason": null}
 
   /llm/summarize:
     post:
-      summary: Generate a summary of the provided document text
+      summary: Summarize document
       tags: [LLM]
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -191,11 +241,112 @@ paths:
               $ref: '#/components/schemas/LLMSummarizeRequest'
       responses:
         '200':
-          description: Summary generated
+          $ref: '#/components/responses/LLMSummarize'
+
+  /llm/templates:
+    get:
+      summary: List AI template starters
+      tags: [Templates]
+      responses:
+        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LLMSummarizeResponse'
+                type: array
+                items:
+                  $ref: '#/components/schemas/Template'
+
+  # ──────────────────────────────────────
+  # EXPORT
+  # ──────────────────────────────────────
+  /docs/{id}/export:
+    post:
+      summary: Export document
+      tags: [Export]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [pdf, docx, latex, md]
+                includeBibTeX:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Presigned download URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                  expiresIn:
+                    type: integer
+
+  # ──────────────────────────────────────
+  # REALTIME (SignalR fallback)
+  # ──────────────────────────────────────
+  /realtime/negotiate:
+    get:
+      summary: SignalR negotiation
+      tags: [Realtime]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignalRInfo'
+
+  # ──────────────────────────────────────
+  # WEBHOOKS & AUDIT
+  # ──────────────────────────────────────
+  /webhooks:
+    get:
+      summary: List webhooks
+      tags: [Webhooks]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: OK } }
+    post:
+      summary: Register webhook
+      tags: [Webhooks]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string }
+                events: { type: array, items: { type: string } }
+      responses: { '201': { description: Created } }
+
+  /audit:
+    get:
+      summary: Activity log (admin only)
+      tags: [Audit]
+      security: [{ bearerAuth: [], adminAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
 
 components:
   securitySchemes:
@@ -203,110 +354,134 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Auth0 JWT (RS256)
+    adminAuth:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
 
   schemas:
-    RegisterRequest:
+    UserProfile:
       type: object
       properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          minLength: 6
-      required: [email, password]
-
-    LoginRequest:
-      type: object
-      properties:
-        email:
-          type: string
-        password:
-          type: string
-      required: [email, password]
-
-    LoginResponse:
-      type: object
-      properties:
-        token:
-          type: string
-        expiresIn:
-          type: integer
-          example: 86400
-
-    UserResponse:
-      type: object
-      properties:
-        id:
-          type: string
-        email:
-          type: string
+        sub: { type: string }
+        email: { type: string }
+        name: { type: string }
+        picture: { type: string }
 
     Document:
       type: object
       properties:
-        id:
-          type: string
-        title:
-          type: string
-        content:
-          type: string
-        owner:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
+        id: { type: string }
+        title: { type: string }
+        content: { type: string }
+        ownerId: { type: string }
+        collaborators: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer }
+
+    DocumentList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Document' } }
+        nextCursor: { type: string, nullable: true }
 
     DocumentCreateRequest:
       type: object
-      properties:
-        title:
-          type: string
-        content:
-          type: string
       required: [title]
+      properties:
+        title: { type: string }
+        content: { type: string }
+        templateId: { type: string }
 
-    DocumentUpdateRequest:
+    DocumentPatch:
       type: object
       properties:
-        title:
-          type: string
-        content:
-          type: string
+        ops:
+          type: array
+          items:
+            type: object
+            properties:
+              op: { type: string, enum: [insert, delete, replace] }
+              path: { type: string }
+              value: { type: string }
 
-    LLMSuggestRequest:
+    Version:
       type: object
       properties:
-        text:
-          type: string
-        tone:
-          type: string
-          enum: [formal, casual, persuasive, concise]
-      required: [text]
+        versionId: { type: string }
+        timestamp: { type: string, format: date-time }
+        author: { type: string }
+        changeCount: { type: integer }
 
-    LLMSuggestResponse:
+    Template:
       type: object
       properties:
-        suggestion:
-          type: string
-        model:
-          type: string
-          example: gpt-4o-mini
+        id: { type: string }
+        name: { type: string }
+        category: { type: string }
+        preview: { type: string }
 
-    LLMSummarizeRequest:
+    SignalRInfo:
       type: object
       properties:
-        text:
-          type: string
-      required: [text]
+        url: { type: string }
+        accessToken: { type: string }
 
-    LLMSummarizeResponse:
+    AuditLog:
       type: object
       properties:
-        summary:
-          type: string
-        word_count:
-          type: integer
+        id: { type: string }
+        userId: { type: string }
+        action: { type: string }
+        timestamp: { type: string, format: date-time }
+        ip: { type: string }
+        userAgent: { type: string }
+
+  requestBodies:
+    LLMSuggest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              text: { type: string }
+              selection: { type: string }
+              tone: { type: string, enum: [formal, casual, persuasive, concise, academic] }
+              instruction: { type: string }
+    LLMStream:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              prompt: { type: string }
+              documentId: { type: string }
+              model: { type: string, default: gpt-4o-mini }
+
+  responses:
+    LLMSuggest:
+      description: AI suggestion with diff
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              suggestion: { type: string }
+              diff: { type: string }
+              model: { type: string }
+              tokens: { type: integer }
+
+    LLMSummarize:
+      description: Summary
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              summary: { type: string }
+              wordCount: { type: integer }
+              readingTime: { type: string }
