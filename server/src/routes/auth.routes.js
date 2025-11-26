@@ -1,16 +1,26 @@
 import express from "express";
-import { register, login, me } from "../controllers/auth.controller.js";
+import {
+  register,
+  login,
+  refreshToken,
+  logout,
+  me,
+  updateProfile,
+  changePassword
+} from "../controllers/auth.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// Local registration
+// Public routes
 router.post("/register", register);
-
-// Local login -> issues JWT
 router.post("/login", login);
+router.post("/refresh", refreshToken);
 
-// Current user from our JWT
+// Protected routes
 router.get("/me", requireAuth, me);
+router.put("/profile", requireAuth, updateProfile);
+router.post("/change-password", requireAuth, changePassword);
+router.post("/logout", requireAuth, logout);
 
 export default router;

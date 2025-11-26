@@ -18,10 +18,62 @@ export const connectDB = async () => {
     client = new CosmosClient({ endpoint, key });
     const { database } = await client.databases.createIfNotExists({ id: databaseId });
     await database.read();
-    console.log("✅ Cosmos DB connected");
+
+  // Ensure all required containers exist
+  await initializeContainers(database);
+
+  console.log("✅ All database containers initialized");
+
+    console.log("✅ Cosmos DB connected and containers initialized");
   } catch (err) {
     console.error("❌ Cosmos DB connection failed:", err.message);
     process.exit(1);
+  }
+};
+
+/**
+ * Initialize all required containers with proper partition keys
+ */
+const initializeContainers = async (database) => {
+  const containers = [
+    {
+      id: "Documents",
+      partitionKey: { paths: ["/ownerId"] },
+      throughput: 400 // RU/s
+    },
+    {
+      id: "Versions",
+      partitionKey: { paths: ["/ownerId"] },
+      throughput: 400 // RU/s
+    },
+    {
+      id: "Users",
+      partitionKey: { paths: ["/id"] },
+      throughput: 400 // RU/s
+    },
+    {
+      id: "Sessions",
+      partitionKey: { paths: ["/userId"] },
+      throughput: 400 // RU/s
+    },
+    {
+      id: "AIInteractions",
+      partitionKey: { paths: ["/userId"] },
+      throughput: 400 // RU/s
+    }
+  ];
+
+  for (const containerConfig of containers) {
+    try {
+      const { container } = await database.containers.createIfNotExists({
+        id: containerConfig.id,
+        partitionKey: containerConfig.partitionKey,
+        throughput: containerConfig.throughput
+      });
+      console.log(`✅ Container '${containerConfig.id}' ready`);
+    } catch (error) {
+      console.warn(`⚠️  Container '${containerConfig.id}' initialization warning:`, error.message);
+    }
   }
 };
 
