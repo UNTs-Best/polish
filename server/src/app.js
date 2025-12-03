@@ -27,6 +27,13 @@ app.use("/api/oauth", oauthRoutes);
 app.use("/api/docs", docRoutes);
 app.use("/api/versions", versionRoutes);
 app.use("/api/llm", llmRoutes);
+app.use("/api/health", (req, res) => {
+  res.status(200).json({ message: "OK" });
+});
+
+app.use("/version", versionRoutes);
+
+
 app.use('/*', (req, res) => {
   res.status(404).json({ message: "Endpoint not found" });
 });
