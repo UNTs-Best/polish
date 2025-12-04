@@ -445,59 +445,59 @@ export default function EditorPage() {
     setPendingChanges(newPendingChanges)
     setShowPendingChanges(true)
 
-    if (changes.type === "delete_research_role") {
-      setDocumentContent((prev) => {
-        const updated = { ...prev }
-        updated.experience = prev.experience.filter((exp, idx) => idx !== 0)
-        return updated
-      })
-    } else if (changes.type === "make_concise") {
-      setDocumentContent((prev) => {
-        const updated = { ...prev }
-        updated.experience = prev.experience.map((exp) => ({
-          ...exp,
-          bullets: exp.bullets.map((bullet) => {
-            const change = changes.changes.find((c) => c.section === "experience" && c.original === bullet)
+    // Generic handler: find and replace the original text with updated text across all sections
+    setDocumentContent((prev) => {
+      const updated = { ...prev }
+      
+      // Update experience bullets
+      updated.experience = prev.experience.map((exp) => ({
+        ...exp,
+        bullets: exp.bullets.map((bullet) => {
+          const change = changes.changes.find((c) => {
+            // Try exact match first
+            if (c.original === bullet) return true
+            // Try case-insensitive match
+            if (c.original.toLowerCase() === bullet.toLowerCase()) return true
+            // Try partial match (in case of whitespace differences)
+            if (bullet.includes(c.original) || c.original.includes(bullet)) return true
+            return false
+          })
+          return change ? change.updated : bullet
+        }),
+      }))
+
+      // Update project bullets
+      updated.projects = prev.projects.map((proj) => ({
+        ...proj,
+        bullets: proj.bullets.map((bullet) => {
+          const change = changes.changes.find((c) => {
+            if (c.original === bullet) return true
+            if (c.original.toLowerCase() === bullet.toLowerCase()) return true
+            if (bullet.includes(c.original) || c.original.includes(bullet)) return true
+            return false
+          })
+          return change ? change.updated : bullet
+        }),
+      }))
+
+      // Update leadership bullets if they exist
+      if (updated.leadership) {
+        updated.leadership = prev.leadership.map((lead) => ({
+          ...lead,
+          bullets: lead.bullets.map((bullet) => {
+            const change = changes.changes.find((c) => {
+              if (c.original === bullet) return true
+              if (c.original.toLowerCase() === bullet.toLowerCase()) return true
+              if (bullet.includes(c.original) || c.original.includes(bullet)) return true
+              return false
+            })
             return change ? change.updated : bullet
           }),
         }))
-        return updated
-      })
-    } else if (changes.type === "bold_metrics") {
-      setDocumentContent((prev) => {
-        const updated = { ...prev }
-        updated.experience = prev.experience.map((exp) => ({
-          ...exp,
-          bullets: exp.bullets.map((bullet) => {
-            const change = changes.changes.find((c) => c.section === "experience" && c.original === bullet)
-            return change ? change.updated.replace(/\*\*/g, "") : bullet
-          }),
-        }))
-        return updated
-      })
-    } else if (changes.type === "xyz_format") {
-      setDocumentContent((prev) => ({
-        ...prev,
-        experience: prev.experience.map((exp) => ({
-          ...exp,
-          bullets: exp.bullets.map((bullet) => {
-            const change = changes.changes.find((c) => c.section === "experience" && c.original === bullet)
-            return change ? change.updated : bullet
-          }),
-        })),
-      }))
-    } else if (changes.type === "stronger_verbs") {
-      setDocumentContent((prev) => ({
-        ...prev,
-        experience: prev.experience.map((exp) => ({
-          ...exp,
-          bullets: exp.bullets.map((bullet) => {
-            const change = changes.changes.find((c) => c.section === "experience" && c.original === bullet)
-            return change ? change.updated : bullet
-          }),
-        })),
-      }))
-    }
+      }
+
+      return updated
+    })
   }
 
   const handleAcceptChanges = () => {
@@ -1032,6 +1032,7 @@ export default function EditorPage() {
           onSuggestionApply={handleApplySuggestion}
           onUndo={handleUndoChanges}
           onClearSelection={handleClearSelection}
+          documentContent={documentContent}
         />
       </div>
 
