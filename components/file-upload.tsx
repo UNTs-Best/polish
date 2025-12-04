@@ -148,7 +148,7 @@ Built relationships with 3 tech companies to provide career resources and recrui
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-lg w-full p-6 bg-white">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-slate-900">Upload Document</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Upload Resume</h3>
           <Button
             variant="ghost"
             size="sm"
@@ -168,7 +168,7 @@ Built relationships with 3 tech companies to provide career resources and recrui
                 {uploadProgress < 100 ? (
                   <>
                     <div className="w-16 h-16 mx-auto border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
-                    <p className="text-sm font-medium text-slate-900">Uploading document...</p>
+                    <p className="text-sm font-medium text-slate-900">Uploading resume...</p>
                     <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-slate-900 transition-all duration-300 ease-out"
