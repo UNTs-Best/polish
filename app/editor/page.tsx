@@ -1,17 +1,20 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import type React from "react"
+import { useState, useEffect, useRef } from "react"
+import { Undo, Download, Check, X, ArrowLeft, HelpCircle, Clock, Upload, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, Download, Sparkles, Check, X, Undo, Menu, Upload, Clock, Save } from "lucide-react"
 import { AIChat } from "@/components/ai-chat"
+import { VersionHistory } from "@/components/version-history"
 import { ExportDialog } from "@/components/export-dialog"
 import { FileUpload } from "@/components/file-upload"
-import { VersionHistory } from "@/components/version-history"
+import { EditorWelcomeModal } from "@/components/editor-welcome-modal"
+import { InlinePrompt } from "@/components/inline-prompt"
 import Link from "next/link"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
+import { getUserItem, setUserItem, removeUserItem } from "@/lib/user-storage"
 
 interface SuggestedChanges {
   type: string
@@ -73,6 +76,34 @@ interface DocumentVersion {
   content: DocumentContent
 }
 
+function loadFromLocalStorage(
+  setDocumentContent: React.Dispatch<React.SetStateAction<DocumentContent>>,
+  setDocumentVersions: React.Dispatch<React.SetStateAction<DocumentVersion[]>>,
+) {
+  const savedDoc = getUserItem("polishEditor_document")
+  const savedVersions = getUserItem("polishEditor_versions")
+
+  if (savedDoc) {
+    try {
+      const parsed = JSON.parse(savedDoc)
+      setDocumentContent(parsed)
+      console.log("[v0] Loaded saved document from localStorage")
+    } catch (error) {
+      console.error("[v0] Failed to load saved document:", error)
+    }
+  }
+
+  if (savedVersions) {
+    try {
+      const parsed = JSON.parse(savedVersions)
+      setDocumentVersions(parsed)
+      console.log("[v0] Loaded version history from localStorage")
+    } catch (error) {
+      console.error("[v0] Failed to load version history:", error)
+    }
+  }
+}
+
 export default function EditorPage() {
   const [selectedText, setSelectedText] = useState("")
   const [aiSuggestion, setAiSuggestion] = useState("")
@@ -90,6 +121,8 @@ export default function EditorPage() {
   const [documentId, setDocumentId] = useState<string | null>(null)
   const [isCosmosDbEnabled, setIsCosmosDbEnabled] = useState(false)
   const [cosmosDbError, setCosmosDbError] = useState<string | null>(null)
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [userRole, setUserRole] = useState<string | undefined>()
   const { toast } = useToast()
 
   const [documentContent, setDocumentContent] = useState<DocumentContent>({
@@ -154,6 +187,10 @@ export default function EditorPage() {
 
   const [originalDocumentContent, setOriginalDocumentContent] = useState<DocumentContent | null>(null)
 
+  const [showInlinePrompt, setShowInlinePrompt] = useState(false)
+  const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
+  const aiChatRef = useRef<{ sendMessage: (prompt: string, text: string) => void } | null>(null)
+
   useEffect(() => {
     const checkCosmosDb = async () => {
       try {
@@ -183,54 +220,69 @@ export default function EditorPage() {
         setCosmosDbError(error instanceof Error ? error.message : "Unknown error")
 
         // Fallback to localStorage
-        loadFromLocalStorage()
+        loadFromLocalStorage(setDocumentContent, setDocumentVersions)
       }
     }
 
     checkCosmosDb()
   }, [])
 
-  const loadFromLocalStorage = () => {
-    const savedDoc = localStorage.getItem("polishEditor_document")
-    const savedVersions = localStorage.getItem("polishEditor_versions")
+  useEffect(() => {
+    const loadDocumentContent = () => {
+      // FIRST: Check for uploaded content from onboarding (takes priority)
+      const uploadedContent = getUserItem("polish_uploaded_content")
+      const uploadedFilename = getUserItem("polish_uploaded_filename")
 
-    if (savedDoc) {
-      try {
-        const parsed = JSON.parse(savedDoc)
-        setDocumentContent(parsed)
-        console.log("[v0] Loaded saved document from localStorage")
-      } catch (error) {
-        console.error("[v0] Failed to load saved document:", error)
+      console.log("[v0] Checking for uploaded content:", uploadedContent ? "found" : "not found")
+
+      if (uploadedContent && uploadedContent.length > 0) {
+        try {
+          const parsedContent = JSON.parse(uploadedContent)
+          console.log("[v0] Parsed uploaded content:", parsedContent)
+
+          setDocumentContent(parsedContent)
+          setOriginalDocumentContent(parsedContent)
+
+          if (uploadedFilename) {
+            setUploadedFileName(uploadedFilename)
+          }
+
+          // Clear the uploaded content so it's not reloaded next time
+          removeUserItem("polish_uploaded_content")
+          removeUserItem("polish_uploaded_filename")
+
+          // Create initial version snapshot
+          const initialVersion: DocumentVersion = {
+            id: `v-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            description: `Imported from: ${uploadedFilename || "uploaded file"}`,
+            content: parsedContent,
+          }
+          setDocumentVersions([initialVersion])
+          setLastSavedAt(new Date())
+
+          console.log("[v0] Successfully loaded uploaded content:", uploadedFilename)
+          return true // Uploaded content was loaded
+        } catch (e) {
+          console.error("[v0] Failed to parse uploaded content:", e)
+        }
       }
+
+      return false // No uploaded content
     }
 
-    if (savedVersions) {
-      try {
-        const parsed = JSON.parse(savedVersions)
-        setDocumentVersions(parsed)
-        console.log("[v0] Loaded version history from localStorage")
-      } catch (error) {
-        console.error("[v0] Failed to load version history:", error)
-      }
-    } else {
-      const initialVersion: DocumentVersion = {
-        id: "v-initial",
-        timestamp: new Date().toISOString(),
-        description: "Initial version",
-        content: documentContent,
-      }
-      setDocumentVersions([initialVersion])
+    // Load uploaded content first, only fall back to localStorage if none found
+    const hasUploadedContent = loadDocumentContent()
+    if (!hasUploadedContent) {
+      loadFromLocalStorage(setDocumentContent, setDocumentVersions)
     }
-
-    setLastSavedAt(new Date())
-  }
+  }, [])
 
   const handleAutosave = async () => {
     setIsSaving(true)
     try {
-      // Always save to localStorage as a fallback
-      localStorage.setItem("polishEditor_document", JSON.stringify(documentContent))
-      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      setUserItem("polishEditor_document", JSON.stringify(documentContent))
+      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
       console.log("[v0] Saved to localStorage")
 
       if (isCosmosDbEnabled) {
@@ -648,112 +700,133 @@ export default function EditorPage() {
     }
   }
 
-  const formatLastSaved = () => {
-    if (!lastSavedAt) return "Not saved yet"
-    const now = new Date()
-    const diffMs = now.getTime() - lastSavedAt.getTime()
-    const diffSecs = Math.floor(diffMs / 1000)
-    const diffMins = Math.floor(diffMs / 60000)
+  useEffect(() => {
+    const hasSeenWelcome = getUserItem("polish_seen_welcome")
+    const onboardingData = getUserItem("polish_onboarding")
 
-    if (diffSecs < 10) return "Saved just now"
-    if (diffSecs < 60) return `Saved ${diffSecs} seconds ago`
-    if (diffMins < 60) return `Saved ${diffMins} minute${diffMins > 1 ? "s" : ""} ago`
-    return `Saved at ${lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    if (!hasSeenWelcome) {
+      setShowWelcomeModal(true)
+    }
+
+    if (onboardingData) {
+      try {
+        const data = JSON.parse(onboardingData)
+        setUserRole(data.role)
+      } catch (e) {
+        console.error("Failed to parse onboarding data")
+      }
+    }
+  }, [])
+
+  const handleCloseWelcome = () => {
+    setShowWelcomeModal(false)
+    setUserItem("polish_seen_welcome", "true")
   }
 
   useEffect(() => {
     if (documentVersions.length > 0) {
-      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
     }
   }, [documentVersions])
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      localStorage.setItem("polishEditor_document", JSON.stringify(documentContent))
-      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      setUserItem("polishEditor_document", JSON.stringify(documentContent))
+      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
       console.log("[v0] Saved on beforeunload")
       triggerSave()
     }
 
     window.addEventListener("beforeunload", handleBeforeUnload)
 
-    // Cleanup: save immediately when component unmounts (e.g., clicking Back button)
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload)
-      localStorage.setItem("polishEditor_document", JSON.stringify(documentContent))
-      localStorage.setItem("polishEditor_versions", JSON.stringify(documentVersions))
+      setUserItem("polishEditor_document", JSON.stringify(documentContent))
+      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
       console.log("[v0] Saved on unmount")
       triggerSave()
     }
   }, [triggerSave, documentContent, documentVersions])
 
+  const handleClearSelection = () => {
+    setSelectedText("")
+    // Also clear the browser's text selection
+    window.getSelection()?.removeAllRanges()
+  }
+
+  // Handler for mouse up to capture text selection from the resume
+  const handleMouseUp = (e: React.MouseEvent) => {
+    const selection = window.getSelection()
+    if (selection && selection.toString().trim()) {
+      const text = selection.toString().trim()
+      setSelectedText(text)
+
+      // Get selection position for inline prompt
+      const range = selection.getRangeAt(0)
+      const rect = range.getBoundingClientRect()
+
+      setSelectionPosition({
+        x: rect.left + rect.width / 2 - 160, // Center the popup
+        y: rect.bottom,
+      })
+      setShowInlinePrompt(true)
+    } else {
+      // Don't close immediately - let click outside handle it
+    }
+  }
+
+  const handleInlinePromptSubmit = (prompt: string, text: string) => {
+    setShowInlinePrompt(false)
+    // The AI chat will receive the selectedText and handle the request
+    // We trigger the chat by updating selection and letting the chat handle it
+    if (aiChatRef.current) {
+      aiChatRef.current.sendMessage(prompt, text)
+    }
+  }
+
+  const handleInlinePromptClose = () => {
+    setShowInlinePrompt(false)
+    setSelectedText("")
+  }
+
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-slate-200/60 backdrop-blur-xl bg-slate-50/90 sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center space-x-4">
+    <div className="h-screen flex flex-col bg-background">
+      {showWelcomeModal && <EditorWelcomeModal onClose={handleCloseWelcome} userRole={userRole} />}
+
+      <header className="border-b border-border bg-background sticky top-0 z-40">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-4">
             <Link href="/">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 text-slate-700 hover:text-slate-900"
-                aria-label="Go back to home page"
-              >
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
             </Link>
-            <Separator orientation="vertical" className="h-6 bg-slate-300" />
-            <span className="font-semibold text-slate-900">Polish Editor</span>
+            <span className="font-medium text-foreground">Polish</span>
+            <span className="text-xs text-muted-foreground">{isSaving ? "Saving..." : "Autosaved"}</span>
             {uploadedFileName && (
-              <span className="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">{uploadedFileName}</span>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{uploadedFileName}</span>
             )}
-            <div className="flex items-center gap-2 text-xs text-slate-600">
-              {isSaving ? (
-                <>
-                  <Save className="w-3 h-3 animate-pulse" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-3 h-3 text-green-600" />
-                  <span>{formatLastSaved()}</span>
-                  {isCosmosDbEnabled && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Cloud Sync</span>
-                  )}
-                </>
-              )}
-            </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={() => setShowVersionHistory(true)}
-              className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 bg-transparent border-slate-300 text-slate-700 hover:bg-slate-50"
-              aria-label="View version history (Keyboard shortcut: Ctrl+H or Cmd+H)"
+              onClick={() => setShowWelcomeModal(true)}
+              className="text-muted-foreground"
             >
-              <Clock className="w-4 h-4 mr-2" />
-              History ({documentVersions.length})
+              <HelpCircle className="w-4 h-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowUploadDialog(true)}
-              className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 bg-transparent border-slate-300 text-slate-700 hover:bg-slate-50"
-              aria-label="Upload a document"
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowVersionHistory(true)}>
+              <Clock className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowUploadDialog(true)}>
               <Upload className="w-4 h-4 mr-2" />
               Upload
             </Button>
             <ExportDialog simulateError={simulateExportError}>
-              <Button
-                data-export-trigger
-                size="sm"
-                className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-                aria-label="Export document (Keyboard shortcut: Ctrl+E or Cmd+E)"
-              >
+              <Button size="sm" className="bg-foreground text-background hover:bg-foreground/90">
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
@@ -762,74 +835,54 @@ export default function EditorPage() {
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-73px)]">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Main Editor Area - now full width */}
         <div className="flex-1 flex flex-col">
-          <div className="border-b border-slate-200/50 px-6 py-3 bg-slate-50/30">
+          {/* Toolbar */}
+          <div className="border-b border-border px-6 py-2 bg-muted/30">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 text-slate-700"
-                  aria-label="View document sections"
-                >
-                  <Menu className="w-4 h-4 mr-2" />
-                  Sections
-                </Button>
-                <Separator orientation="vertical" className="h-4 bg-slate-300" />
-                <span className="text-sm text-slate-600">Page 1 of 1</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                {showPendingChanges && (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={handleAcceptChanges}
-                      className="bg-green-600 hover:bg-green-700 text-white focus:ring-2 focus:ring-green-600 focus:ring-offset-2"
-                      aria-label="Accept all changes"
-                    >
-                      <Check className="w-4 h-4 mr-1" />
-                      Accept
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleUndoChanges}
-                      className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 bg-transparent border-slate-300 text-slate-700"
-                      aria-label="Undo all changes"
-                    >
-                      <Undo className="w-4 h-4 mr-1" />
-                      Undo
-                    </Button>
-                  </>
-                )}
-              </div>
+              <span className="text-sm text-muted-foreground">Page 1 of 1</span>
+              {showPendingChanges && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleAcceptChanges}
+                    className="bg-green-600 hover:bg-green-700 text-white h-8"
+                  >
+                    <Check className="w-3 h-3 mr-1" />
+                    Accept
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleUndoChanges} className="h-8 bg-transparent">
+                    <Undo className="w-3 h-3 mr-1" />
+                    Undo
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex-1 p-8 overflow-auto bg-slate-50/10">
-            <Card
-              className="max-w-4xl mx-auto min-h-[800px] p-12 bg-white shadow-lg transition-all duration-300"
-              role="article"
-              aria-label="Document preview"
-            >
+          {/* Document Preview */}
+          <div className="flex-1 p-8 overflow-auto bg-muted/20" onMouseUp={handleMouseUp}>
+            <Card className="max-w-4xl mx-auto min-h-[800px] p-12 bg-background shadow-lg select-text cursor-text">
               <div className="space-y-6">
-                <div className="text-center border-b pb-6">
-                  <h1 className="text-3xl font-bold mb-2 text-slate-900">{documentContent.name}</h1>
-                  <p className="text-slate-600 mb-1">{documentContent.title}</p>
-                  <p className="text-sm text-slate-500">{documentContent.contact}</p>
+                {/* Header Section */}
+                <div id="section-header" className="text-center border-b pb-6">
+                  <h1 className="text-3xl font-bold mb-2 text-foreground">{documentContent.name}</h1>
+                  <p className="text-muted-foreground mb-1">{documentContent.title}</p>
+                  <p className="text-sm text-muted-foreground">{documentContent.contact}</p>
                 </div>
 
-                <div>
-                  <h2 className="text-lg font-bold border-b border-slate-300 mb-3 text-slate-900">Education</h2>
+                {/* Education Section */}
+                <div id="section-education">
+                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Education</h2>
                   <div className="space-y-3">
                     {documentContent.education.map((edu, idx) => (
                       <div key={idx} className="flex justify-between text-sm">
                         <div>
-                          <div className="font-semibold text-slate-900">{edu.school}</div>
-                          <div className="text-slate-600">{edu.degree}</div>
+                          <div className="font-semibold text-foreground">{edu.school}</div>
+                          <div className="text-muted-foreground">{edu.degree}</div>
                         </div>
-                        <div className="text-right text-slate-600">
+                        <div className="text-right text-muted-foreground">
                           <div>{edu.location}</div>
                           <div>{edu.period}</div>
                         </div>
@@ -838,26 +891,27 @@ export default function EditorPage() {
                   </div>
                 </div>
 
-                <div>
-                  <h2 className="text-lg font-bold border-b border-slate-300 mb-3 text-slate-900">Experience</h2>
+                {/* Experience Section */}
+                <div id="section-experience">
+                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Experience</h2>
                   <div className="space-y-4">
                     {documentContent.experience.map((exp, idx) => (
                       <div key={idx}>
                         <div className="flex justify-between mb-1">
-                          <div className="font-semibold text-slate-900">{exp.role}</div>
-                          <div className="text-sm text-slate-600">{exp.period}</div>
+                          <div className="font-semibold text-foreground">{exp.role}</div>
+                          <div className="text-sm text-muted-foreground">{exp.period}</div>
                         </div>
                         <div className="flex justify-between mb-2">
-                          <div className="text-sm text-slate-600 italic">{exp.company}</div>
-                          <div className="text-sm text-slate-600 italic">{exp.location}</div>
+                          <div className="text-sm text-muted-foreground italic">{exp.company}</div>
+                          <div className="text-sm text-muted-foreground italic">{exp.location}</div>
                         </div>
-                        <ul className="list-disc list-inside text-sm space-y-1 text-slate-700">
+                        <ul className="list-disc list-inside text-sm space-y-1 text-foreground/80">
                           {exp.bullets.map((bullet, bidx) => (
                             <li
                               key={bidx}
                               className={`transition-all duration-300 ${
                                 isTextHighlighted(bullet)
-                                  ? "bg-yellow-100 border-l-4 border-yellow-500 pl-2 py-1 animate-pulse"
+                                  ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1"
                                   : ""
                               }`}
                             >
@@ -870,18 +924,19 @@ export default function EditorPage() {
                   </div>
                 </div>
 
-                <div>
-                  <h2 className="text-lg font-bold border-b border-slate-300 mb-3 text-slate-900">Projects</h2>
+                {/* Projects Section */}
+                <div id="section-projects">
+                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Projects</h2>
                   <div className="space-y-4">
                     {documentContent.projects.map((proj, idx) => (
                       <div key={idx}>
                         <div className="flex justify-between mb-1">
-                          <div className="font-semibold text-slate-900">
+                          <div className="font-semibold text-foreground">
                             {proj.name} | {proj.tech}
                           </div>
-                          <div className="text-sm text-slate-600">{proj.period}</div>
+                          <div className="text-sm text-muted-foreground">{proj.period}</div>
                         </div>
-                        <ul className="list-disc list-inside text-sm space-y-1 text-slate-700">
+                        <ul className="list-disc list-inside text-sm space-y-1 text-foreground/80">
                           {proj.bullets.map((bullet, bidx) => (
                             <li key={bidx}>{bullet}</li>
                           ))}
@@ -891,32 +946,24 @@ export default function EditorPage() {
                   </div>
                 </div>
 
+                {/* Leadership Section */}
                 {documentContent.leadership && documentContent.leadership.length > 0 && (
-                  <div>
-                    <h2 className="text-lg font-bold border-b border-slate-300 mb-3 text-slate-900">Leadership</h2>
+                  <div id="section-leadership">
+                    <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Leadership</h2>
                     <div className="space-y-4">
                       {documentContent.leadership.map((lead, idx) => (
                         <div key={idx}>
                           <div className="flex justify-between mb-1">
-                            <div className="font-semibold text-slate-900">{lead.role}</div>
-                            <div className="text-sm text-slate-600">{lead.period}</div>
+                            <div className="font-semibold text-foreground">{lead.role}</div>
+                            <div className="text-sm text-muted-foreground">{lead.period}</div>
                           </div>
                           <div className="flex justify-between mb-2">
-                            <div className="text-sm text-slate-600 italic">{lead.organization}</div>
-                            <div className="text-sm text-slate-600 italic">{lead.location}</div>
+                            <div className="text-sm text-muted-foreground italic">{lead.organization}</div>
+                            <div className="text-sm text-muted-foreground italic">{lead.location}</div>
                           </div>
-                          <ul className="list-disc list-inside text-sm space-y-1 text-slate-700">
+                          <ul className="list-disc list-inside text-sm space-y-1 text-foreground/80">
                             {lead.bullets.map((bullet, bidx) => (
-                              <li
-                                key={bidx}
-                                className={`transition-all duration-300 ${
-                                  isTextHighlighted(bullet)
-                                    ? "bg-yellow-100 border-l-4 border-yellow-500 pl-2 py-1 animate-pulse"
-                                    : ""
-                                }`}
-                              >
-                                {bullet}
-                              </li>
+                              <li key={bidx}>{bullet}</li>
                             ))}
                           </ul>
                         </div>
@@ -925,51 +972,39 @@ export default function EditorPage() {
                   </div>
                 )}
 
-                <div>
-                  <h2 className="text-lg font-bold border-b border-slate-300 mb-3 text-slate-900">Technical Skills</h2>
-                  <div className="text-sm text-slate-700">{documentContent.skills}</div>
+                {/* Skills Section */}
+                <div id="section-skills">
+                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Technical Skills</h2>
+                  <div className="text-sm text-foreground/80">{documentContent.skills}</div>
                 </div>
               </div>
             </Card>
           </div>
 
+          {/* AI Suggestion Popup */}
           {showSuggestion && (
-            <div
-              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50"
-              role="dialog"
-              aria-labelledby="suggestion-title"
-              aria-describedby="suggestion-description"
-            >
-              <Card className="p-4 shadow-xl border-slate-200 bg-white/95 backdrop-blur-sm max-w-md">
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+              <Card className="p-4 shadow-xl border-border bg-background max-w-md">
                 <div className="space-y-3">
                   <div className="flex items-center space-x-2">
-                    <Sparkles className="w-4 h-4 text-slate-700" />
-                    <span id="suggestion-title" className="font-medium text-sm text-slate-900">
-                      AI Suggestion
-                    </span>
+                    <Wand2 className="w-4 h-4 text-foreground" />
+                    <span className="font-medium text-sm text-foreground">AI Suggestion</span>
                   </div>
-                  <p id="suggestion-description" className="text-sm text-slate-600">
+                  <p className="text-sm text-muted-foreground">
                     Selected: "{selectedText.substring(0, 50)}
                     {selectedText.length > 50 ? "..." : ""}"
                   </p>
-                  <p className="text-sm text-slate-900">{aiSuggestion}</p>
+                  <p className="text-sm text-foreground">{aiSuggestion}</p>
                   <div className="flex space-x-2">
                     <Button
                       size="sm"
                       onClick={acceptSuggestion}
-                      className="bg-slate-900 hover:bg-slate-800 text-white border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-                      aria-label="Accept AI suggestion"
+                      className="bg-foreground text-background hover:bg-foreground/90"
                     >
                       <Check className="w-3 h-3 mr-1" />
                       Accept
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={rejectSuggestion}
-                      className="focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 bg-transparent border-slate-300"
-                      aria-label="Reject AI suggestion"
-                    >
+                    <Button size="sm" variant="outline" onClick={rejectSuggestion}>
                       <X className="w-3 h-3 mr-1" />
                       Reject
                     </Button>
@@ -978,13 +1013,25 @@ export default function EditorPage() {
               </Card>
             </div>
           )}
+
+          {/* Inline Prompt Component */}
+          {showInlinePrompt && selectedText && (
+            <InlinePrompt
+              selectedText={selectedText}
+              position={selectionPosition}
+              onSubmit={handleInlinePromptSubmit}
+              onClose={handleInlinePromptClose}
+            />
+          )}
         </div>
 
+        {/* AI Chat Panel */}
         <AIChat
+          ref={aiChatRef}
           selectedText={selectedText}
           onSuggestionApply={handleApplySuggestion}
           onUndo={handleUndoChanges}
-          simulateError={simulateChatError}
+          onClearSelection={handleClearSelection}
         />
       </div>
 
@@ -995,8 +1042,17 @@ export default function EditorPage() {
         onClose={() => setShowVersionHistory(false)}
         onRestore={handleRestoreVersion}
         currentVersions={documentVersions}
-        onReset={handleResetVersionHistory} // Added reset handler prop
+        onReset={handleResetVersionHistory}
       />
     </div>
   )
+}
+
+function formatLastSaved(lastSavedAt: Date | null): string {
+  if (!lastSavedAt) return "Not saved yet"
+  const now = new Date()
+  const diff = Math.floor((now.getTime() - lastSavedAt.getTime()) / 1000)
+  if (diff < 60) return "Saved just now"
+  if (diff < 3600) return `Saved ${Math.floor(diff / 60)}m ago`
+  return `Saved ${Math.floor(diff / 3600)}h ago`
 }
