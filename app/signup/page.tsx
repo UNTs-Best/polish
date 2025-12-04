@@ -49,6 +49,7 @@ export default function SignUp() {
 
     localStorage.setItem("polish_user", JSON.stringify({ email, name: email.split("@")[0] }))
 
+    // Route to onboarding page after successful signup
     router.push("/onboarding")
   }
 
