@@ -22,16 +22,28 @@ interface SuggestedChanges {
   }>
 }
 
+interface DocumentContent {
+  name?: string
+  title?: string
+  contact?: string
+  education?: Array<any>
+  experience?: Array<any>
+  projects?: Array<any>
+  leadership?: Array<any>
+  skills?: string
+}
+
 interface AIChatProps {
   selectedText?: string
   onSuggestionApply?: (changes: SuggestedChanges) => void
   onUndo?: () => void
   onClearSelection?: () => void
   simulateError?: boolean
+  documentContent?: DocumentContent
 }
 
 export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) => void }, AIChatProps>(function AIChat(
-  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError },
+  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent },
   ref,
 ) {
   const [messages, setMessages] = useState<Message[]>([
@@ -94,6 +106,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         body: JSON.stringify({
           message: messageToSend,
           selectedText: contextText || currentSelection,
+          documentContent: documentContent,
         }),
       })
 
