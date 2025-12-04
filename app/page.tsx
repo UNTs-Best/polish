@@ -15,11 +15,26 @@ import {
   FileText,
   Upload,
   ArrowRight,
+  Menu,
+  LogOut,
+  User,
 } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { GuideModal } from "@/components/guide-modal"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { clearUserData } from "@/lib/user-storage"
 
 export default function LandingPage() {
+  const router = useRouter()
+  const [user, setUser] = useState<{ email: string; name: string } | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
   const [displayText, setDisplayText] = useState("")
   const [isTyping, setIsTyping] = useState(false)
@@ -47,28 +62,41 @@ export default function LandingPage() {
   const [selectedDocType, setSelectedDocType] = useState("")
   const [showInputMethod, setShowInputMethod] = useState(false)
   const [featureAnimations, setFeatureAnimations] = useState([false, false, false, false])
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem("polish_user")
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch {
+        setUser(null)
+      }
+    }
+  }, [])
 
   const sequence = [
     {
       user: "",
       assistant: "",
-      text: "The all-in-one platform to edit your documents and resumes visually, powered by AI.",
+      text: "The all-in-one platform to edit your resumes visually, powered by AI.",
       weight: "font-bold",
       model: "GPT-5",
       delay: 3000,
     },
     {
       user: "Rewrite this headline to be shorter.",
-      assistant: "Edit your docs & resumes visually with AI.",
-      text: "Edit your docs & resumes visually with AI.",
+      assistant: "Edit your resumes visually with AI.",
+      text: "Edit your resumes visually with AI.",
       weight: "font-bold",
       model: "GPT-5",
       delay: 3000,
     },
     {
       user: "Make it bolder and add impact.",
-      assistant: "The all-in-one AI platform to supercharge your documents and resumes.",
-      text: "The all-in-one AI platform to supercharge your documents and resumes.",
+      assistant: "The all-in-one AI platform to supercharge your resumes.",
+      text: "The all-in-one AI platform to supercharge your resumes.",
       weight: "font-black",
       model: "Claude 4.0 Sonnet",
       delay: 3000,
@@ -275,6 +303,20 @@ export default function LandingPage() {
     setShowInputMethod(true)
   }
 
+  const handleOpenEditor = () => {
+    if (user) {
+      router.push("/editor")
+    } else {
+      router.push("/signin")
+    }
+  }
+
+  const handleSignOut = () => {
+    clearUserData()
+    localStorage.removeItem("polish_user")
+    setUser(null)
+  }
+
   useEffect(() => {
     const timer = setTimeout(runSequence, currentStep === 0 ? 0 : 800)
     return () => clearTimeout(timer)
@@ -328,42 +370,128 @@ export default function LandingPage() {
             <div className="text-2xl font-bold bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
               Polish
             </div>
-            <div className="hidden md:flex items-center space-x-8">
-              <Link
-                href="#features"
-                className="text-slate-600 hover:text-slate-800 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 rounded"
-              >
-                Features
-              </Link>
-              <Link
-                href="#pricing"
-                className="text-slate-600 hover:text-slate-800 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 rounded"
-              >
-                Pricing
-              </Link>
-              <Link
-                href="#resources"
-                className="text-slate-600 hover:text-slate-800 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 rounded"
-              >
-                Resources
-              </Link>
+            <div className="hidden md:flex items-center space-x-4">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+                onClick={() => setGuideOpen(true)}
+                className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg"
               >
-                Sign In
+                Guide
               </Button>
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2"
+                    >
+                      <User className="w-4 h-4" />
+                      {user.name}
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuItem className="text-slate-600 cursor-default truncate max-w-full">
+                      {user.email}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {user ? (
+                <Link href="/editor">
+                  <Button
+                    size="sm"
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+                  >
+                    Open Editor
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/signup">
+                  <Button
+                    size="sm"
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+                  >
+                    Get Started
+                  </Button>
+                </Link>
+              )}
+            </div>
+            <div className="md:hidden">
               <Button
+                variant="ghost"
                 size="sm"
-                className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+                onClick={() => setMobileMenuOpen(true)}
+                className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg"
               >
-                Get Started
+                <Menu className="w-6 h-6" />
               </Button>
             </div>
           </div>
         </div>
+        {mobileMenuOpen && (
+          <div className="absolute top-16 left-0 right-0 bg-white border-b border-slate-200/60 shadow-lg z-50">
+            <div className="p-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setGuideOpen(true)}
+                className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg w-full justify-start"
+              >
+                Guide
+              </Button>
+            </div>
+            <div className="p-4">
+              {user ? (
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex items-center gap-2 px-2 py-1">
+                    <User className="w-4 h-4 text-slate-500" />
+                    <span className="text-sm text-slate-600 font-medium">{user.name}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSignOut}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 font-medium rounded-lg w-full justify-start"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign Out
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <div className="p-4">
+              {user ? (
+                <Link href="/editor" className="w-full">
+                  <Button
+                    size="sm"
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 w-full justify-start"
+                  >
+                    Open Editor
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/signup" className="w-full">
+                  <Button
+                    size="sm"
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 w-full justify-start"
+                  >
+                    Get Started
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
       </nav>
+      <GuideModal open={guideOpen} onOpenChange={setGuideOpen} />
       <section className="relative overflow-hidden">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-20 relative">
           <div className="text-center opacity-90">
@@ -437,7 +565,7 @@ export default function LandingPage() {
                   <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2 border border-slate-200">
                     <input
                       type="text"
-                      placeholder="Ask AI to edit your document..."
+                      placeholder="Ask AI to edit your resume..."
                       className="flex-1 text-sm bg-transparent border-none outline-none placeholder-slate-500"
                       disabled
                     />
@@ -449,18 +577,18 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="flex justify-center items-center mb-6">
-              <Link href="/editor">
+              <Link href={user ? "/editor" : "/signin"}>
                 <Button
                   size="lg"
                   className="text-lg px-10 py-6 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold tracking-tight border-0 opacity-100 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-                  aria-label="Open the Polish editor to start editing your document"
+                  aria-label={user ? "Open the Polish editor to start editing your resume" : "Get started with Polish"}
                 >
-                  Open Editor
+                  {user ? "Open Editor" : "Get Started"}
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
             </div>
-            <p className="text-sm text-slate-600 text-center font-medium">Work inside your docs, not around them.</p>
+            <p className="text-sm text-slate-600 text-center font-medium">Work inside your resume, not around it.</p>
           </div>
         </div>
       </section>
@@ -819,7 +947,7 @@ export default function LandingPage() {
               {
                 icon: Zap,
                 title: "Edit Smarter",
-                desc: "Inline AI edits inside your documents/resume.",
+                desc: "Inline AI edits inside your resume.",
                 index: 0,
                 animatedText: "Grammar corrected",
               },
@@ -880,20 +1008,10 @@ export default function LandingPage() {
       <footer className="border-t border-slate-200/60 py-16 relative bg-slate-50/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="text-lg font-bold bg-gradient-to-r from-slate-800 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
+            <div className="text-2xl font-bold bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
               Polish
             </div>
-            <div className="flex items-center space-x-8 text-sm text-slate-600">
-              <Link href="#features" className="hover:text-slate-800 transition-colors font-medium">
-                Features
-              </Link>
-              <Link href="#pricing" className="hover:text-slate-800 transition-colors font-medium">
-                Pricing
-              </Link>
-              <Link href="#resources" className="hover:text-slate-800 transition-colors font-medium">
-                Resources
-              </Link>
-            </div>
+            <div className="text-sm text-slate-500">© {new Date().getFullYear()} Polish. All rights reserved.</div>
           </div>
         </div>
       </footer>

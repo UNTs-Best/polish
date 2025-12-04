@@ -96,7 +96,7 @@ export function VersionHistory({ isOpen, onClose, onRestore, currentVersions, on
             </DialogTitle>
           </DialogHeader>
           <p id="version-history-description" className="text-sm text-slate-600 -mt-2">
-            View and restore previous versions of your document
+            View and restore previous versions of your resume
           </p>
 
           <ScrollArea className="h-[500px] pr-4">
@@ -183,8 +183,8 @@ export function VersionHistory({ isOpen, onClose, onRestore, currentVersions, on
           <AlertDialogHeader>
             <AlertDialogTitle>Clear All Version History?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all version history. Your current document will remain unchanged, but you
-              won't be able to restore any previous versions. This action cannot be undone.
+              This will permanently delete all version history. Your current resume will remain unchanged, but you won't
+              be able to restore any previous versions. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
