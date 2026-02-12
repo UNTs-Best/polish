@@ -2,19 +2,31 @@
 
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
-import { Undo, Download, Check, X, ArrowLeft, HelpCircle, Clock, Upload, Wand2 } from "lucide-react"
+import { Undo, Download, Check, X, ArrowLeft, HelpCircle, Clock, Upload, Wand2, User, LogOut, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { AIChat } from "@/components/ai-chat"
 import { VersionHistory } from "@/components/version-history"
 import { ExportDialog } from "@/components/export-dialog"
 import { FileUpload } from "@/components/file-upload"
 import { EditorWelcomeModal } from "@/components/editor-welcome-modal"
 import { InlinePrompt } from "@/components/inline-prompt"
+import { ClaudeConnect, ClaudeConnectionStatus } from "@/components/claude-connect"
+import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import type { FormatLabel } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
-import { getUserItem, setUserItem, removeUserItem } from "@/lib/user-storage"
+import { getUserItem, setUserItem, removeUserItem, clearUserData } from "@/lib/user-storage"
 
 interface SuggestedChanges {
   type: string
@@ -105,6 +117,8 @@ function loadFromLocalStorage(
 }
 
 export default function EditorPage() {
+  const router = useRouter()
+  const [user, setUser] = useState<{ email: string; name: string } | null>(null)
   const [selectedText, setSelectedText] = useState("")
   const [aiSuggestion, setAiSuggestion] = useState("")
   const [showSuggestion, setShowSuggestion] = useState(false)
@@ -124,6 +138,13 @@ export default function EditorPage() {
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [userRole, setUserRole] = useState<string | undefined>()
   const { toast } = useToast()
+
+  // Claude connection state
+  const [claudeApiKey, setClaudeApiKey] = useState<string | null>(null)
+  const [showClaudeConnect, setShowClaudeConnect] = useState(false)
+
+  // Source format state (from uploaded file)
+  const [sourceFormat, setSourceFormat] = useState<FormatLabel | null>(null)
 
   const [documentContent, setDocumentContent] = useState<DocumentContent>({
     name: "Jake Ryan",
@@ -190,6 +211,40 @@ export default function EditorPage() {
   const [showInlinePrompt, setShowInlinePrompt] = useState(false)
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const aiChatRef = useRef<{ sendMessage: (prompt: string, text: string) => void } | null>(null)
+
+  // Load user and Claude API key from localStorage on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem("polish_user")
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch {
+        setUser(null)
+      }
+    }
+
+    const savedKey = getUserItem("polish_claude_api_key")
+    if (savedKey) {
+      setClaudeApiKey(savedKey)
+    }
+  }, [])
+
+  const [isSigningOut, setIsSigningOut] = useState(false)
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true)
+    // Clear all user-specific data (Claude API key, preferences, etc.)
+    clearUserData()
+    // Clear core session
+    localStorage.removeItem("polish_user")
+    sessionStorage.clear()
+    // Reset local state
+    setClaudeApiKey(null)
+    setUser(null)
+    // Brief delay so the user sees the "Signing out..." state
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    router.push("/signin")
+  }
 
   useEffect(() => {
     const checkCosmosDb = async () => {
@@ -448,17 +503,34 @@ export default function EditorPage() {
     // Generic handler: find and replace the original text with updated text across all sections
     setDocumentContent((prev) => {
       const updated = { ...prev }
-      
+
+      // Update header fields
+      for (const change of changes.changes) {
+        if (change.original === prev.name) updated.name = change.updated
+        if (change.original === prev.title) updated.title = change.updated
+        if (change.original === prev.contact) updated.contact = change.updated
+        if (change.original === prev.skills) updated.skills = change.updated
+      }
+
+      // Update education fields
+      updated.education = prev.education.map((edu) => {
+        const newEdu = { ...edu }
+        for (const change of changes.changes) {
+          if (change.original === edu.school) newEdu.school = change.updated
+          if (change.original === edu.degree) newEdu.degree = change.updated
+          if (change.original === edu.location) newEdu.location = change.updated
+          if (change.original === edu.period) newEdu.period = change.updated
+        }
+        return newEdu
+      })
+
       // Update experience bullets
       updated.experience = prev.experience.map((exp) => ({
         ...exp,
         bullets: exp.bullets.map((bullet) => {
           const change = changes.changes.find((c) => {
-            // Try exact match first
             if (c.original === bullet) return true
-            // Try case-insensitive match
             if (c.original.toLowerCase() === bullet.toLowerCase()) return true
-            // Try partial match (in case of whitespace differences)
             if (bullet.includes(c.original) || c.original.includes(bullet)) return true
             return false
           })
@@ -482,7 +554,7 @@ export default function EditorPage() {
 
       // Update leadership bullets if they exist
       if (updated.leadership) {
-        updated.leadership = prev.leadership.map((lead) => ({
+        updated.leadership = prev.leadership?.map((lead) => ({
           ...lead,
           bullets: lead.bullets.map((bullet) => {
             const change = changes.changes.find((c) => {
@@ -522,8 +594,9 @@ export default function EditorPage() {
     return pendingChanges.some((change) => change.updated === text || change.original === text)
   }
 
-  const handleFileUpload = (file: File, content: string) => {
+  const handleFileUpload = (file: File, content: string, format: FormatLabel) => {
     setUploadedFileName(file.name)
+    setSourceFormat(format)
     setShowUploadDialog(false)
 
     const lines = content.split("\n").filter((line) => line.trim())
@@ -665,7 +738,6 @@ export default function EditorPage() {
       // Clear Cosmos DB versions if enabled
       if (isCosmosDbEnabled && documentId) {
         try {
-          // Delete all versions for this document from Cosmos DB
           const response = await fetch(`/api/documents/${documentId}/versions`, {
             method: "DELETE",
             headers: {
@@ -789,6 +861,25 @@ export default function EditorPage() {
     setSelectedText("")
   }
 
+  // Claude connection handlers
+  const handleClaudeConnect = (key: string) => {
+    setClaudeApiKey(key)
+    setUserItem("polish_claude_api_key", key)
+    toast({
+      title: "Connected to Claude",
+      description: "AI-powered editing is now active.",
+    })
+  }
+
+  const handleClaudeDisconnect = () => {
+    setClaudeApiKey(null)
+    removeUserItem("polish_claude_api_key")
+    toast({
+      title: "Disconnected",
+      description: "Claude API key removed.",
+    })
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {showWelcomeModal && <EditorWelcomeModal onClose={handleCloseWelcome} userRole={userRole} />}
@@ -807,14 +898,22 @@ export default function EditorPage() {
             {uploadedFileName && (
               <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{uploadedFileName}</span>
             )}
+            {sourceFormat && (
+              <span className="text-xs font-medium bg-slate-900 text-white px-2 py-0.5 rounded-full">{sourceFormat}</span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
+            <ClaudeConnectionStatus
+              isConnected={!!claudeApiKey}
+              onClick={() => setShowClaudeConnect(true)}
+            />
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowWelcomeModal(true)}
-              className="text-muted-foreground"
+              className="text-muted-foreground hover:text-foreground"
+              title="Guide"
             >
               <HelpCircle className="w-4 h-4" />
             </Button>
@@ -825,23 +924,64 @@ export default function EditorPage() {
               <Upload className="w-4 h-4 mr-2" />
               Upload
             </Button>
-            <ExportDialog simulateError={simulateExportError}>
+            <ExportDialog documentContent={documentContent} simulateError={simulateExportError} sourceFormat={sourceFormat || undefined}>
               <Button size="sm" className="bg-foreground text-background hover:bg-foreground/90">
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
             </ExportDialog>
+            {user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 cursor-pointer hover:bg-muted transition-colors"
+                    disabled={isSigningOut}
+                  >
+                    <User className="w-4 h-4" />
+                    <span className="max-w-[120px] truncate">
+                      {isSigningOut ? "Signing out..." : user.name}
+                    </span>
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="text-muted-foreground font-normal text-xs truncate">
+                    {user.email}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setShowClaudeConnect(true)}
+                    className="cursor-pointer"
+                  >
+                    Account Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    variant="destructive"
+                    className="cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Main Editor Area - now full width */}
+        {/* Main Editor Area */}
         <div className="flex-1 flex flex-col">
           {/* Toolbar */}
           <div className="border-b border-border px-6 py-2 bg-muted/30">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Page 1 of 1</span>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-muted-foreground">Page 1 of 1</span>
+              </div>
               {showPendingChanges && (
                 <div className="flex items-center gap-2">
                   <Button
@@ -861,125 +1001,13 @@ export default function EditorPage() {
             </div>
           </div>
 
-          {/* Document Preview */}
-          <div className="flex-1 p-8 overflow-auto bg-muted/20" onMouseUp={handleMouseUp}>
-            <Card className="max-w-4xl mx-auto min-h-[800px] p-12 bg-background shadow-lg select-text cursor-text">
-              <div className="space-y-6">
-                {/* Header Section */}
-                <div id="section-header" className="text-center border-b pb-6">
-                  <h1 className="text-3xl font-bold mb-2 text-foreground">{documentContent.name}</h1>
-                  <p className="text-muted-foreground mb-1">{documentContent.title}</p>
-                  <p className="text-sm text-muted-foreground">{documentContent.contact}</p>
-                </div>
-
-                {/* Education Section */}
-                <div id="section-education">
-                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Education</h2>
-                  <div className="space-y-3">
-                    {documentContent.education.map((edu, idx) => (
-                      <div key={idx} className="flex justify-between text-sm">
-                        <div>
-                          <div className="font-semibold text-foreground">{edu.school}</div>
-                          <div className="text-muted-foreground">{edu.degree}</div>
-                        </div>
-                        <div className="text-right text-muted-foreground">
-                          <div>{edu.location}</div>
-                          <div>{edu.period}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Experience Section */}
-                <div id="section-experience">
-                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Experience</h2>
-                  <div className="space-y-4">
-                    {documentContent.experience.map((exp, idx) => (
-                      <div key={idx}>
-                        <div className="flex justify-between mb-1">
-                          <div className="font-semibold text-foreground">{exp.role}</div>
-                          <div className="text-sm text-muted-foreground">{exp.period}</div>
-                        </div>
-                        <div className="flex justify-between mb-2">
-                          <div className="text-sm text-muted-foreground italic">{exp.company}</div>
-                          <div className="text-sm text-muted-foreground italic">{exp.location}</div>
-                        </div>
-                        <ul className="list-disc list-inside text-sm space-y-1 text-foreground/80">
-                          {exp.bullets.map((bullet, bidx) => (
-                            <li
-                              key={bidx}
-                              className={`transition-all duration-300 ${
-                                isTextHighlighted(bullet)
-                                  ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1"
-                                  : ""
-                              }`}
-                            >
-                              {bullet}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Projects Section */}
-                <div id="section-projects">
-                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Projects</h2>
-                  <div className="space-y-4">
-                    {documentContent.projects.map((proj, idx) => (
-                      <div key={idx}>
-                        <div className="flex justify-between mb-1">
-                          <div className="font-semibold text-foreground">
-                            {proj.name} | {proj.tech}
-                          </div>
-                          <div className="text-sm text-muted-foreground">{proj.period}</div>
-                        </div>
-                        <ul className="list-disc list-inside text-sm space-y-1 text-foreground/80">
-                          {proj.bullets.map((bullet, bidx) => (
-                            <li key={bidx}>{bullet}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Leadership Section */}
-                {documentContent.leadership && documentContent.leadership.length > 0 && (
-                  <div id="section-leadership">
-                    <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Leadership</h2>
-                    <div className="space-y-4">
-                      {documentContent.leadership.map((lead, idx) => (
-                        <div key={idx}>
-                          <div className="flex justify-between mb-1">
-                            <div className="font-semibold text-foreground">{lead.role}</div>
-                            <div className="text-sm text-muted-foreground">{lead.period}</div>
-                          </div>
-                          <div className="flex justify-between mb-2">
-                            <div className="text-sm text-muted-foreground italic">{lead.organization}</div>
-                            <div className="text-sm text-muted-foreground italic">{lead.location}</div>
-                          </div>
-                          <ul className="list-disc list-inside text-sm space-y-1 text-foreground/80">
-                            {lead.bullets.map((bullet, bidx) => (
-                              <li key={bidx}>{bullet}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Skills Section */}
-                <div id="section-skills">
-                  <h2 className="text-lg font-bold border-b border-border mb-3 text-foreground">Technical Skills</h2>
-                  <div className="text-sm text-foreground/80">{documentContent.skills}</div>
-                </div>
-              </div>
-            </Card>
-          </div>
+          {/* Resume Renderer */}
+          <ResumeRenderer
+            documentContent={documentContent}
+            template="classic"
+            onMouseUp={handleMouseUp}
+            isTextHighlighted={isTextHighlighted}
+          />
 
           {/* AI Suggestion Popup */}
           {showSuggestion && (
@@ -1033,6 +1061,8 @@ export default function EditorPage() {
           onUndo={handleUndoChanges}
           onClearSelection={handleClearSelection}
           documentContent={documentContent}
+          apiKey={claudeApiKey || undefined}
+          onConnectClick={() => setShowClaudeConnect(true)}
         />
       </div>
 
@@ -1044,6 +1074,14 @@ export default function EditorPage() {
         onRestore={handleRestoreVersion}
         currentVersions={documentVersions}
         onReset={handleResetVersionHistory}
+      />
+
+      <ClaudeConnect
+        isOpen={showClaudeConnect}
+        onClose={() => setShowClaudeConnect(false)}
+        onConnect={handleClaudeConnect}
+        onDisconnect={handleClaudeDisconnect}
+        isConnected={!!claudeApiKey}
       />
     </div>
   )
