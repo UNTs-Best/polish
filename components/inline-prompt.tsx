@@ -12,27 +12,35 @@ interface InlinePromptProps {
   onClose: () => void
 }
 
+const QUICK_ACTIONS = [
+  { label: "Improve", prompt: "Improve this" },
+  { label: "Shorten", prompt: "Make more concise" },
+  { label: "Professional", prompt: "Make more professional" },
+  { label: "Add metrics", prompt: "Add metrics and numbers" },
+  { label: "ATS optimize", prompt: "Optimize for ATS systems" },
+  { label: "Action verbs", prompt: "Use stronger action verbs" },
+  { label: "Quantify", prompt: "Quantify the achievements" },
+  { label: "Proofread", prompt: "Proofread and fix grammar" },
+]
+
 export function InlinePrompt({ selectedText, position, onSubmit, onClose }: InlinePromptProps) {
   const [prompt, setPrompt] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Focus input when component mounts
     setTimeout(() => {
       inputRef.current?.focus()
     }, 50)
   }, [])
 
   useEffect(() => {
-    // Close on click outside
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
 
-    // Close on escape
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onClose()
@@ -67,28 +75,24 @@ export function InlinePrompt({ selectedText, position, onSubmit, onClose }: Inli
     }
   }
 
-  // Calculate position to keep popup in viewport
   const getAdjustedPosition = () => {
-    const popupWidth = 320
-    const popupHeight = 140
+    const popupWidth = 360
+    const popupHeight = 180
     const padding = 16
 
     let x = position.x
-    let y = position.y + 8 // Small offset below selection
+    let y = position.y + 8
 
-    // Adjust if popup would go off right edge
     if (x + popupWidth > window.innerWidth - padding) {
       x = window.innerWidth - popupWidth - padding
     }
 
-    // Adjust if popup would go off left edge
     if (x < padding) {
       x = padding
     }
 
-    // Adjust if popup would go off bottom edge
     if (y + popupHeight > window.innerHeight - padding) {
-      y = position.y - popupHeight - 8 // Show above selection instead
+      y = position.y - popupHeight - 8
     }
 
     return { x, y }
@@ -105,39 +109,24 @@ export function InlinePrompt({ selectedText, position, onSubmit, onClose }: Inli
         top: adjustedPosition.y,
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-3 w-80">
+      <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-3 w-[360px]">
         {/* Selected text preview */}
         <div className="mb-2 pb-2 border-b border-slate-100">
           <p className="text-xs text-slate-500 mb-1">Selected text</p>
           <p className="text-sm text-slate-700 line-clamp-2">"{selectedText}"</p>
         </div>
 
-        {/* Quick actions */}
+        {/* Quick actions - two rows */}
         <div className="flex flex-wrap gap-1.5 mb-2">
-          <button
-            onClick={() => handleQuickAction("Improve this")}
-            className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-          >
-            Improve
-          </button>
-          <button
-            onClick={() => handleQuickAction("Make more concise")}
-            className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-          >
-            Shorten
-          </button>
-          <button
-            onClick={() => handleQuickAction("Make more professional")}
-            className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-          >
-            Professional
-          </button>
-          <button
-            onClick={() => handleQuickAction("Add metrics and numbers")}
-            className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-          >
-            Add metrics
-          </button>
+          {QUICK_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              onClick={() => handleQuickAction(action.prompt)}
+              className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
 
         {/* Custom prompt input */}
@@ -148,7 +137,7 @@ export function InlinePrompt({ selectedText, position, onSubmit, onClose }: Inli
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Or type your request..."
+            placeholder="Or ask Claude anything..."
             className="flex-1 text-sm px-3 py-1.5 rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
           />
           <Button

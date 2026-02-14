@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "latest",
+    "@anthropic-ai/sdk": "^0.74.0",
     "@azure/cosmos": "latest",
     "@azure/storage-blob": "12.29.1",
     "@hookform/resolvers": "^3.10.0",
@@ -58,6 +59,7 @@
     "http": "0.0.1-security",
     "input-otp": "latest",
     "jsonwebtoken": "9.0.2",
+    "jspdf": "^4.1.0",
     "jwt-decode": "4.0.0",
     "lucide-react": "^0.454.0",
     "mammoth": "latest",

@@ -5,10 +5,7 @@ import {
   Download,
   Zap,
   Eye,
-  Palette,
   ChevronDown,
-  Mic,
-  Paperclip,
   Send,
   X,
   Check,
@@ -18,6 +15,10 @@ import {
   Menu,
   LogOut,
   User,
+  MessageSquare,
+  Shield,
+  FileType,
+  ChevronUp,
 } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
@@ -27,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -39,15 +41,12 @@ export default function LandingPage() {
   const [displayText, setDisplayText] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const [fontWeight, setFontWeight] = useState("font-bold")
-  const [selectedModel, setSelectedModel] = useState("GPT-5")
   const [showTyping, setShowTyping] = useState(false)
   const [userTypingText, setUserTypingText] = useState("")
   const [isUserTyping, setIsUserTyping] = useState(false)
   const [showAssistantResponse, setShowAssistantResponse] = useState(false)
   const [showDemoModal, setShowDemoModal] = useState(false)
   const [demoStep, setDemoStep] = useState(0)
-  const [demoText, setDemoText] = useState("")
-  const [isDemoTyping, setIsDemoTyping] = useState(false)
   const [highlightedText, setHighlightedText] = useState("")
   const [showExportSuccess, setShowExportSuccess] = useState(false)
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 })
@@ -58,12 +57,10 @@ export default function LandingPage() {
   const [isScrolling, setIsScrolling] = useState(false)
   const [scrollPosition, setScrollPosition] = useState(0)
   const [showAssistantTyping, setShowAssistantTyping] = useState(false)
-  const [showDocumentFlow, setShowDocumentFlow] = useState(false)
-  const [selectedDocType, setSelectedDocType] = useState("")
-  const [showInputMethod, setShowInputMethod] = useState(false)
   const [featureAnimations, setFeatureAnimations] = useState([false, false, false, false])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
+  const [openFaq, setOpenFaq] = useState<number | null>(null)
 
   useEffect(() => {
     const storedUser = localStorage.getItem("polish_user")
@@ -80,33 +77,29 @@ export default function LandingPage() {
     {
       user: "",
       assistant: "",
-      text: "The all-in-one platform to edit your resumes visually, powered by AI.",
+      text: "Upload any format. Edit with AI. Export anywhere.",
       weight: "font-bold",
-      model: "GPT-5",
       delay: 3000,
     },
     {
-      user: "Rewrite this headline to be shorter.",
-      assistant: "Edit your resumes visually with AI.",
-      text: "Edit your resumes visually with AI.",
+      user: "Rewrite this bullet with stronger action verbs.",
+      assistant: "Spearheaded development of a REST API using FastAPI, improving data throughput by 40%.",
+      text: "Spearheaded development of a REST API using FastAPI, improving data throughput by 40%.",
       weight: "font-bold",
-      model: "GPT-5",
       delay: 3000,
     },
     {
-      user: "Make it bolder and add impact.",
-      assistant: "The all-in-one AI platform to supercharge your resumes.",
-      text: "The all-in-one AI platform to supercharge your resumes.",
+      user: "Optimize my resume for ATS systems.",
+      assistant: "I'll restructure your experience section with industry-standard keywords and measurable impact.",
+      text: "AI-powered editing that gets you past ATS and into interviews.",
       weight: "font-black",
-      model: "Claude 4.0 Sonnet",
       delay: 3000,
     },
     {
-      user: "Rewrite in XYZ format with a metric.",
-      assistant: "Increase clarity by 40% by visually editing and validating every change with AI.",
-      text: "Increase clarity by 40% by visually editing and validating every change with AI.",
+      user: "Quantify all achievements in my experience section.",
+      assistant: "Added metrics to 6 bullet points — revenue impact, efficiency gains, and team scaling numbers.",
+      text: "Every edit backed by data. Every suggestion you control.",
       weight: "font-bold",
-      model: "Claude 4.0 Sonnet",
       delay: 3000,
     },
   ]
@@ -163,9 +156,8 @@ export default function LandingPage() {
 
   const runSequence = () => {
     const step = sequence[currentStep]
-    setSelectedModel(step.model)
     setFontWeight(step.weight)
-    setShowAssistantResponse(false) // Always start with assistant response hidden
+    setShowAssistantResponse(false)
 
     if (step.user) {
       typeUserMessage(step.user, () => {
@@ -174,7 +166,7 @@ export default function LandingPage() {
           setTimeout(() => {
             setShowTyping(false)
             setTimeout(() => {
-              setShowAssistantResponse(true) // Only show after typing dots disappear
+              setShowAssistantResponse(true)
               typeText(step.text, () => {
                 setTimeout(() => {
                   setCurrentStep((prev) => (prev + 1) % sequence.length)
@@ -288,19 +280,10 @@ export default function LandingPage() {
                 }, 500)
               }, 1000)
             }, 1000)
-          }, 1000)
+          }, 500)
         }, 500)
       }
     }, 100)
-  }
-
-  const startDocumentFlow = () => {
-    setShowDocumentFlow(true)
-  }
-
-  const selectDocumentType = (type: string) => {
-    setSelectedDocType(type)
-    setShowInputMethod(true)
   }
 
   const handleOpenEditor = () => {
@@ -311,10 +294,16 @@ export default function LandingPage() {
     }
   }
 
-  const handleSignOut = () => {
+  const [isSigningOut, setIsSigningOut] = useState(false)
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true)
     clearUserData()
     localStorage.removeItem("polish_user")
+    sessionStorage.clear()
     setUser(null)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    router.push("/signin")
   }
 
   useEffect(() => {
@@ -344,6 +333,29 @@ export default function LandingPage() {
     return () => clearInterval(interval)
   }, [])
 
+  const faqItems = [
+    {
+      q: "What file formats does Polish support?",
+      a: "Polish supports PDF, DOCX, RTF, TXT, and LaTeX files. Upload in any format and export to any other — your content is preserved with full fidelity.",
+    },
+    {
+      q: "How does the AI editing work?",
+      a: "Polish uses Claude AI to understand your resume content in context. Select any text, choose a quick action or type a custom prompt, and Claude suggests improvements. You review every change before it's applied.",
+    },
+    {
+      q: "Is my data secure?",
+      a: "Your API key is stored only in your browser's local storage and is never sent to our servers. Resume content is processed through the Claude API with your own key — we never store or access your documents.",
+    },
+    {
+      q: "Do I need a Claude API key?",
+      a: "Yes. Polish connects directly to the Claude API using your personal Anthropic API key. This gives you full control over usage and costs. Get your key at console.anthropic.com.",
+    },
+    {
+      q: "Can I use Polish without AI features?",
+      a: "Yes. You can upload, view, and export resumes in multiple formats without connecting an API key. AI editing features activate once you connect your Claude API key.",
+    },
+  ]
+
   return (
     <div
       className="min-h-screen relative opacity-100"
@@ -364,6 +376,8 @@ export default function LandingPage() {
       </a>
 
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-transparent to-slate-100/40"></div>
+
+      {/* Navigation */}
       <nav className="border-b border-slate-200/60 backdrop-blur-xl bg-slate-50/90 sticky top-0 z-50 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -396,19 +410,20 @@ export default function LandingPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2 cursor-pointer transition-colors"
+                      disabled={isSigningOut}
                     >
                       <User className="w-4 h-4" />
-                      {user.name}
+                      {isSigningOut ? "Signing out..." : user.name}
                       <ChevronDown className="w-3 h-3" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuItem className="text-slate-600 cursor-default truncate max-w-full">
+                    <DropdownMenuLabel className="text-slate-500 font-normal text-xs truncate">
                       {user.email}
-                    </DropdownMenuItem>
+                    </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
+                    <DropdownMenuItem onClick={handleSignOut} variant="destructive" className="cursor-pointer">
                       <LogOut className="w-4 h-4 mr-2" />
                       Sign Out
                     </DropdownMenuItem>
@@ -477,14 +492,16 @@ export default function LandingPage() {
                     <User className="w-4 h-4 text-slate-500" />
                     <span className="text-sm text-slate-600 font-medium">{user.name}</span>
                   </div>
+                  <span className="text-xs text-slate-400 px-2 truncate">{user.email}</span>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
+                    disabled={isSigningOut}
                     className="text-red-600 hover:text-red-700 hover:bg-red-50 font-medium rounded-lg w-full justify-start"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
+                    {isSigningOut ? "Signing out..." : "Sign Out"}
                   </Button>
                 </div>
               ) : null}
@@ -516,9 +533,23 @@ export default function LandingPage() {
         )}
       </nav>
       <GuideModal open={guideOpen} onOpenChange={setGuideOpen} />
+
+      {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-20 relative">
           <div className="text-center opacity-90">
+            {/* Format badges */}
+            <div className="flex items-center justify-center gap-2 mb-8">
+              {["PDF", "DOCX", "RTF", "TXT", "LaTeX"].map((fmt) => (
+                <span
+                  key={fmt}
+                  className="text-[11px] font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full uppercase tracking-wide shadow-sm"
+                >
+                  {fmt}
+                </span>
+              ))}
+            </div>
+
             <div className="mb-12">
               <h1
                 className={`text-4xl sm:text-5xl lg:text-6xl ${fontWeight} text-balance mb-6 min-h-[160px] flex items-center justify-center transition-all duration-700`}
@@ -530,23 +561,25 @@ export default function LandingPage() {
               </h1>
             </div>
             <p className="text-lg text-slate-600 text-balance max-w-3xl mx-auto mb-12 leading-relaxed">
-              No more back-and-forth, no more wasted time. One clean preview, all your edits in one place, powered by
-              AI.
+              Upload your resume in any format. Edit with Claude AI inline. Export to PDF, DOCX, LaTeX, and more
+              — all in one place.
             </p>
+
+            {/* Chat preview widget */}
             <div className="max-w-md mx-auto mb-10 relative">
               <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden backdrop-blur-xl">
                 <div className="flex items-center justify-between p-3 border-b border-slate-200/50 bg-gradient-to-r from-slate-50/80 to-slate-100/80">
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      <div className="w-5 h-5 bg-gradient-to-br from-slate-500/60 to-slate-700/70 rounded-lg flex items-center justify-center backdrop-blur-sm shadow-sm border border-slate-300/30 opacity-100">
-                        <FileText className="w-3 h-3 text-white/80" />
+                      <div className="w-5 h-5 bg-slate-100 rounded-lg flex items-center justify-center shadow-sm border border-slate-200/60 opacity-100">
+                        <MessageSquare className="w-3 h-3 text-slate-600" />
                       </div>
                     </div>
-                    <span className="text-sm font-semibold text-slate-800">{"Assistant"}</span>
+                    <span className="text-sm font-semibold"><span className="text-orange-600">Claude</span> <span className="text-slate-800">Assistant</span></span>
                   </div>
                   <div className="relative group">
                     <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 border border-slate-200 shadow-sm opacity-100">
-                      <span className="text-sm font-semibold text-slate-800">{selectedModel}</span>
+                      <span className="text-sm font-semibold text-slate-800">Claude Sonnet</span>
                       <ChevronDown className="w-4 h-4 text-slate-500" />
                     </div>
                   </div>
@@ -589,18 +622,18 @@ export default function LandingPage() {
                   <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2 border border-slate-200">
                     <input
                       type="text"
-                      placeholder="Ask AI to edit your resume..."
+                      placeholder="Ask Claude to edit your resume..."
                       className="flex-1 text-sm bg-transparent border-none outline-none placeholder-slate-500"
                       disabled
                     />
-                    <Mic className="w-4 h-4 text-slate-400" />
-                    <Paperclip className="w-4 h-4 text-slate-400" />
                     <Send className="w-4 h-4 text-slate-600" />
                   </div>
                 </div>
               </div>
             </div>
-            <div className="flex justify-center items-center mb-6">
+
+            {/* CTA buttons */}
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-6">
               <Link href={user ? "/editor" : "/signin"}>
                 <Button
                   size="lg"
@@ -611,75 +644,24 @@ export default function LandingPage() {
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={startDemo}
+                className="text-lg px-8 py-6 rounded-2xl border-slate-300 text-slate-700 hover:bg-slate-50 font-medium"
+              >
+                <Eye className="w-5 h-5 mr-2" />
+                Watch Demo
+              </Button>
             </div>
-            <p className="text-sm text-slate-600 text-center font-medium">Work inside your resume, not around it.</p>
+            <p className="text-sm text-slate-600 text-center font-medium">
+              Connected via MCP Server
+            </p>
           </div>
         </div>
       </section>
-      {showDocumentFlow && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-8">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold text-slate-900">Choose Document Type</h2>
-              <button
-                onClick={() => {
-                  setShowDocumentFlow(false)
-                  setShowInputMethod(false)
-                  setSelectedDocType("")
-                }}
-                className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
 
-            {!showInputMethod ? (
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { type: "Resume", icon: FileText, desc: "Professional resume editing" },
-                  { type: "Cover Letter", icon: FileText, desc: "Compelling cover letters" },
-                  { type: "Research Paper", icon: FileText, desc: "Academic paper formatting" },
-                  { type: "Essay", icon: FileText, desc: "Essay structure & flow" },
-                ].map(({ type, icon: Icon, desc }) => (
-                  <button
-                    key={type}
-                    onClick={() => selectDocumentType(type)}
-                    className="p-6 border-2 border-slate-200 rounded-2xl hover:border-slate-900 hover:bg-slate-50 transition-all duration-200 text-left group"
-                  >
-                    <Icon className="w-8 h-8 text-slate-600 group-hover:text-slate-900 mb-3" />
-                    <h3 className="font-semibold text-slate-900 mb-1">{type}</h3>
-                    <p className="text-sm text-slate-600">{desc}</p>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div>
-                <h3 className="text-xl font-semibold mb-6">How would you like to input your {selectedDocType}?</h3>
-                <div className="space-y-4">
-                  <button className="w-full p-6 border-2 border-slate-200 rounded-2xl hover:border-slate-900 hover:bg-slate-50 transition-all duration-200 text-left group">
-                    <div className="flex items-center gap-4">
-                      <FileText className="w-8 h-8 text-slate-600 group-hover:text-slate-900" />
-                      <div>
-                        <h4 className="font-semibold text-slate-900">Paste LaTeX Code</h4>
-                        <p className="text-sm text-slate-600">Paste your existing LaTeX document</p>
-                      </div>
-                    </div>
-                  </button>
-                  <button className="w-full p-6 border-2 border-slate-200 rounded-2xl hover:border-slate-900 hover:bg-slate-50 transition-all duration-200 text-left group">
-                    <div className="flex items-center gap-4">
-                      <Upload className="w-8 h-8 text-slate-600 group-hover:text-slate-900" />
-                      <div>
-                        <h4 className="font-semibold text-slate-900">Upload Document</h4>
-                        <p className="text-sm text-slate-600">Upload DOCX, TXT, RTF, or other text formats</p>
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Demo Modal */}
       {showDemoModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
@@ -698,7 +680,12 @@ export default function LandingPage() {
             )}
 
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
-              <h2 className="text-xl font-semibold">Polish Live Demo</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold">Polish Live Demo</h2>
+                <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                  AI-Powered
+                </span>
+              </div>
               <button
                 onClick={() => {
                   setShowDemoModal(false)
@@ -833,27 +820,9 @@ export default function LandingPage() {
                             Developed a full-stack web application using with Flask serving a REST API with React as the
                             frontend
                           </li>
-                          <li>Implemented GitHub OAuth to get data from user's repositories</li>
+                          <li>Implemented GitHub OAuth to get data from user&apos;s repositories</li>
                           <li>Visualized GitHub data to show collaboration</li>
                           <li>Used Celery and Redis for asynchronous tasks</li>
-                        </ul>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <div className="font-semibold">Simple Paintball | Spigot API, Java, Maven, TravisCI, Git</div>
-                          <div className="text-sm text-slate-600">May 2018 -- May 2020</div>
-                        </div>
-                        <ul className="list-disc list-inside text-sm space-y-1">
-                          <li>
-                            Developed a Minecraft server plugin to entertain kids during free time for a previous job
-                          </li>
-                          <li>Published plugin to websites gaining 2K+ downloads and an average 4.5/5-star review</li>
-                          <li>Implemented continuous delivery using TravisCI to build the plugin upon new a release</li>
-                          <li>
-                            Collaborated with Minecraft server administrators to suggest features and get feedback about
-                            the plugin
-                          </li>
                         </ul>
                       </div>
                     </div>
@@ -863,16 +832,13 @@ export default function LandingPage() {
                     <h2 className="text-lg font-bold border-b border-slate-300 mb-3">Technical Skills</h2>
                     <div className="text-sm space-y-1">
                       <div>
-                        <span className="font-semibold">Languages:</span> Java, Python, C/C++, SQL (Postgres),
-                        JavaScript, HTML/CSS, R
+                        <span className="font-semibold">Languages:</span> Java, Python, C/C++, SQL, JavaScript, HTML/CSS
                       </div>
                       <div>
-                        <span className="font-semibold">Frameworks:</span> React, Node.js, Flask, JUnit, WordPress,
-                        Material-UI, FastAPI
+                        <span className="font-semibold">Frameworks:</span> React, Node.js, Flask, FastAPI
                       </div>
                       <div>
-                        <span className="font-semibold">Developer Tools:</span> Git, Docker, TravisCI, Google Cloud
-                        Platform, VS Code, Visual Studio, PyCharm, IntelliJ, Eclipse
+                        <span className="font-semibold">Developer Tools:</span> Git, Docker, GCP, VS Code
                       </div>
                       <div>
                         <span className="font-semibold">Libraries:</span> pandas, NumPy, Matplotlib
@@ -892,8 +858,8 @@ export default function LandingPage() {
               <div className="w-80 border-l border-slate-200 flex flex-col">
                 <div className="p-4 border-b border-slate-200/50">
                   <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-4 py-2">
-                    <span className="text-sm font-semibold">GPT-5</span>
-                    <ChevronDown className="w-4 h-4 text-slate-500" />
+                    <MessageSquare className="w-4 h-4 text-slate-600" />
+                    <span className="text-sm font-semibold"><span className="text-orange-600">Claude</span> Sonnet</span>
                   </div>
                 </div>
 
@@ -906,7 +872,7 @@ export default function LandingPage() {
                     </div>
                   )}
 
-                  {showTyping && (
+                  {showAssistantTyping && (
                     <div className="flex justify-start">
                       <div className="bg-slate-100 text-slate-700 px-4 py-3 rounded-2xl rounded-bl-lg text-sm shadow-sm">
                         <div className="flex items-center gap-1">
@@ -946,6 +912,8 @@ export default function LandingPage() {
                         <button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded">PDF</button>
                         <button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded">DOCX</button>
                         <button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded">LaTeX</button>
+                        <button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded">RTF</button>
+                        <button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded">TXT</button>
                       </div>
                     </div>
                   )}
@@ -954,7 +922,9 @@ export default function LandingPage() {
                     <div className="flex-1 text-sm bg-transparent border-none outline-none placeholder-slate-400 min-h-[20px]">
                       {chatInputText && <span>{chatInputText}</span>}
                       {showChatCaret && <span className="animate-pulse">|</span>}
-                      {!chatInputText && !showChatCaret && <span className="text-slate-400">Ask AI to edit...</span>}
+                      {!chatInputText && !showChatCaret && (
+                        <span className="text-slate-400">Ask Claude to edit...</span>
+                      )}
                     </div>
                     <Send className="w-4 h-4 text-slate-700" />
                   </div>
@@ -964,37 +934,45 @@ export default function LandingPage() {
           </div>
         </div>
       )}
+
+      {/* Features Section */}
       <section className="py-20 bg-slate-50/60 backdrop-blur-sm relative" id="features" aria-label="Features section">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-slate-900 mb-4">Everything you need to polish your resume</h2>
+            <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+              From upload to export, every step is streamlined with AI-powered editing and multi-format support.
+            </p>
+          </div>
           <div className="grid md:grid-cols-4 gap-8">
             {[
               {
-                icon: Zap,
-                title: "Edit Smarter",
-                desc: "Inline AI edits inside your resume.",
+                icon: FileType,
+                title: "Multi-Format Support",
+                desc: "Upload PDF, DOCX, RTF, TXT, or LaTeX. Export to any format.",
                 index: 0,
-                animatedText: "Grammar corrected",
+                animatedText: "PDF parsed",
+              },
+              {
+                icon: MessageSquare,
+                title: "Claude AI Editing",
+                desc: "Inline AI suggestions via MCP Server. ATS optimization, proofreading, and more.",
+                index: 1,
+                animatedText: "Bullet improved",
               },
               {
                 icon: Eye,
-                title: "Preview Instantly",
-                desc: "See clean formatting right away.",
-                index: 1,
-                animatedText: "Format updated",
-              },
-              {
-                icon: Palette,
-                title: "Track Changes",
-                desc: "Review smart AI suggestions and approve with one click.",
+                title: "Live Preview",
+                desc: "See changes rendered in real-time as you edit.",
                 index: 2,
-                animatedText: "Changes approved",
+                animatedText: "Template applied",
               },
               {
-                icon: Download,
-                title: "Export Fast",
-                desc: "Save as PDF, DOCX, or LaTeX.",
+                icon: Shield,
+                title: "You Stay in Control",
+                desc: "Review every AI suggestion. Accept, reject, or undo with one click.",
                 index: 3,
-                animatedText: "Exported to PDF",
+                animatedText: "Change accepted",
               },
             ].map(({ icon: Icon, title, desc, index, animatedText }) => (
               <div
@@ -1021,7 +999,7 @@ export default function LandingPage() {
                 </p>
                 {featureAnimations[index] && (
                   <div className="text-sm bg-slate-100/80 text-slate-800 px-3 py-2 rounded-xl animate-pulse backdrop-blur-sm">
-                    <span className="bg-slate-200/60 px-1 rounded">{animatedText}</span> ✓
+                    <span className="bg-slate-200/60 px-1 rounded">{animatedText}</span>
                   </div>
                 )}
               </div>
@@ -1029,16 +1007,152 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* How It Works Section */}
+      <section className="py-20 relative" aria-label="How it works">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold text-slate-900 mb-4">How it works</h2>
+            <p className="text-lg text-slate-600">Five steps from upload to polished resume.</p>
+          </div>
+          <div className="grid md:grid-cols-5 gap-6">
+            {[
+              {
+                step: "1",
+                title: "Upload",
+                desc: "Drop in your PDF, DOCX, RTF, TXT, or LaTeX file.",
+                icon: Upload,
+              },
+              {
+                step: "2",
+                title: "Connect",
+                desc: "Link to Claude via MCP Server to enable AI features.",
+                icon: Zap,
+              },
+              {
+                step: "3",
+                title: "Select & Edit",
+                desc: "Highlight text and choose from quick actions or type a custom prompt.",
+                icon: MessageSquare,
+              },
+              {
+                step: "4",
+                title: "Review",
+                desc: "Accept or reject each suggestion with highlighted diffs.",
+                icon: Check,
+              },
+              {
+                step: "5",
+                title: "Export",
+                desc: "Download in PDF, DOCX, LaTeX, RTF, or TXT.",
+                icon: Download,
+              },
+            ].map(({ step, title, desc, icon: Icon }) => (
+              <div key={step} className="text-center">
+                <div className="w-14 h-14 mx-auto mb-4 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg">
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Step {step}</div>
+                <h3 className="text-lg font-bold text-slate-900 mb-2">{title}</h3>
+                <p className="text-sm text-slate-600">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-20 bg-slate-50/60 backdrop-blur-sm relative" id="faq" aria-label="Frequently asked questions">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-slate-900 mb-4">Frequently asked questions</h2>
+          </div>
+          <div className="space-y-3">
+            {faqItems.map((item, idx) => (
+              <div
+                key={idx}
+                className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm"
+              >
+                <button
+                  onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+                  className="w-full flex items-center justify-between p-5 text-left hover:bg-slate-50 transition-colors"
+                >
+                  <span className="font-semibold text-slate-900 pr-4">{item.q}</span>
+                  {openFaq === idx ? (
+                    <ChevronUp className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  )}
+                </button>
+                {openFaq === idx && (
+                  <div className="px-5 pb-5 text-slate-600 text-sm leading-relaxed animate-in fade-in slide-in-from-top-1 duration-200">
+                    {item.a}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Signals / CTA Section */}
+      <section className="py-20 relative" aria-label="Get started">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-bold text-slate-900 mb-4">Ready to polish your resume?</h2>
+          <p className="text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
+            Upload any format. Edit with Claude AI. Export to anything. All in your browser, all under your control.
+          </p>
+          <Link href={user ? "/editor" : "/signin"}>
+            <Button
+              size="lg"
+              className="text-lg px-10 py-6 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold tracking-tight border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
+            >
+              {user ? "Open Editor" : "Get Started Free"}
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
+          </Link>
+          <div className="flex items-center justify-center gap-6 mt-10 text-sm text-slate-500">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              <span>Your data stays local</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4" />
+              <span>Claude AI Integration</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              <span>5 formats supported</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
       <footer className="border-t border-slate-200/60 py-16 relative bg-slate-50/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="text-2xl font-bold bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
-              Polish
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div>
+              <div className="text-2xl font-bold bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
+                Polish
+              </div>
+              <p className="text-xs text-slate-500 mt-1">AI-powered resume editing via MCP Server</p>
             </div>
-            <div className="text-sm text-slate-500">© {new Date().getFullYear()} Polish. All rights reserved.</div>
+            <div className="flex items-center gap-3">
+              {["PDF", "DOCX", "RTF", "TXT", "LaTeX"].map((fmt) => (
+                <span
+                  key={fmt}
+                  className="text-[10px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full uppercase tracking-wide"
+                >
+                  {fmt}
+                </span>
+              ))}
+            </div>
+            <div className="text-sm text-slate-500">&copy; {new Date().getFullYear()} Polish. All rights reserved.</div>
           </div>
         </div>
       </footer>
+
       <style jsx>{`
         @keyframes fadeInUp {
           from {
