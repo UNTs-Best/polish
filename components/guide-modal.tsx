@@ -12,23 +12,34 @@ interface GuideModalProps {
 
 const guideSteps = [
   {
-    title: "Edit Smarter",
+    title: "Upload Any Format",
     description:
-      "Select any text to get an inline prompt, or ask the AI Assistant directly for help with any part of your resume.",
+      "Upload your resume as PDF, DOCX, RTF, TXT, or LaTeX. Polish parses it automatically so you can start editing right away.",
   },
   {
-    title: "Preview Instantly",
+    title: "Connect Claude AI",
     description:
-      "See formatting and layout changes in real-time. Your resume preview updates instantly as you make edits.",
+      "Click 'Connect Claude' in the header and enter your Anthropic API key. Once connected, all AI editing features become active.",
   },
   {
-    title: "Review Changes",
+    title: "Select & Edit with AI",
     description:
-      "AI suggestions appear in the chat. Review each one and accept, reject, or ask for tweaks before applying.",
+      "Highlight any text in your resume to see an inline prompt with quick actions like 'Improve', 'Shorten', 'ATS optimize', and more. Or type a custom request.",
+  },
+  {
+    title: "Review Suggestions",
+    description:
+      "AI suggestions appear in the chat panel with highlighted diffs. Accept changes to apply them, dismiss to skip, or undo to revert.",
+  },
+  {
+    title: "Quick Actions",
+    description:
+      "Use the quick action buttons in the chat panel to instantly optimize for ATS, proofread, quantify achievements, or make your resume more concise.",
   },
   {
     title: "Export Anywhere",
-    description: "Download your finished resume as PDF for applications, DOCX for editing, or LaTeX for academic use.",
+    description:
+      "Download your polished resume as PDF, DOCX, LaTeX, RTF, or TXT. Convert between any format seamlessly.",
   },
 ]
 
