@@ -380,6 +380,17 @@ export default function LandingPage() {
                 Guide
               </Button>
               {user ? (
+                <Link href="/dashboard">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg"
+                  >
+                    Dashboard
+                  </Button>
+                </Link>
+              ) : null}
+              {user ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -442,11 +453,22 @@ export default function LandingPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setGuideOpen(true)}
+                onClick={() => { setGuideOpen(true); setMobileMenuOpen(false); }}
                 className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg w-full justify-start"
               >
                 Guide
               </Button>
+              {user ? (
+                <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg w-full justify-start mt-2"
+                  >
+                    Dashboard
+                  </Button>
+                </Link>
+              ) : null}
             </div>
             <div className="p-4">
               {user ? (
@@ -458,7 +480,7 @@ export default function LandingPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={handleSignOut}
+                    onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
                     className="text-red-600 hover:text-red-700 hover:bg-red-50 font-medium rounded-lg w-full justify-start"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
@@ -469,16 +491,18 @@ export default function LandingPage() {
             </div>
             <div className="p-4">
               {user ? (
-                <Link href="/editor" className="w-full">
-                  <Button
-                    size="sm"
-                    className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 w-full justify-start"
-                  >
-                    Open Editor
-                  </Button>
-                </Link>
+                <>
+                  <Link href="/editor" className="w-full" onClick={() => setMobileMenuOpen(false)}>
+                    <Button
+                      size="sm"
+                      className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 w-full justify-start"
+                    >
+                      Open Editor
+                    </Button>
+                  </Link>
+                </>
               ) : (
-                <Link href="/signup" className="w-full">
+                <Link href="/signup" className="w-full" onClick={() => setMobileMenuOpen(false)}>
                   <Button
                     size="sm"
                     className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 w-full justify-start"
