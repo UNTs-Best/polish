@@ -1,0 +1,389 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - develop    # -> dev environment
+      - test       # -> test environment
+      - staging    # -> stage environment
+      - main       # -> prod environment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - stage
+          - prod
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine which environment to deploy to
+  # ---------------------------------------------------------------------------
+  resolve-env:
+    name: Resolve environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - name: Set environment from branch or input
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "environment=dev" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
+            echo "environment=test" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "environment=stage" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "environment=prod" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build frontend (Next.js)
+  # ---------------------------------------------------------------------------
+  build-frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    needs: resolve-env
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js app
+        run: npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_ENVIRONMENT: ${{ needs.resolve-env.outputs.environment }}
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: |
+            .next/
+            public/
+            package.json
+            package-lock.json
+            next.config.mjs
+          retention-days: 5
+
+  # ---------------------------------------------------------------------------
+  # Build server (Express + Docker)
+  # ---------------------------------------------------------------------------
+  build-server:
+    name: Build server
+    runs-on: ubuntu-latest
+    needs: resolve-env
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: ./server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-for-ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t polish-server:${{ github.sha }} \
+            -t polish-server:${{ needs.resolve-env.outputs.environment }}-latest \
+            .
+
+      - name: Save Docker image
+        run: docker save polish-server:${{ needs.resolve-env.outputs.environment }}-latest > server-image.tar
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-build
+          path: |
+            ./server/server-image.tar
+            ./server/dist/
+            ./server/package.json
+            ./server/package-lock.json
+          retention-days: 5
+
+  # ---------------------------------------------------------------------------
+  # Deploy to dev
+  # ---------------------------------------------------------------------------
+  deploy-dev:
+    name: Deploy to dev
+    runs-on: ubuntu-latest
+    needs: [resolve-env, build-frontend, build-server]
+    if: needs.resolve-env.outputs.environment == 'dev'
+    environment:
+      name: dev
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend
+
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+          path: server
+
+      - name: Load Docker image
+        run: docker load < server/server/server-image.tar
+
+      - name: Deploy frontend
+        run: |
+          echo "Deploying frontend to dev environment..."
+          # Examples:
+          #   az webapp deploy --resource-group $RG --name polish-dev-frontend ...
+          #   vercel deploy --env preview --token ${{ secrets.VERCEL_TOKEN }}
+          #   rsync -avz frontend/ ${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }}:/app/frontend/
+        env:
+          DEV_HOST: ${{ secrets.DEV_HOST }}
+          DEV_USER: ${{ secrets.DEV_USER }}
+          DEV_SSH_KEY: ${{ secrets.DEV_SSH_KEY }}
+
+      - name: Deploy server
+        run: |
+          echo "Deploying server to dev environment..."
+          # Examples:
+          #   docker tag polish-server:dev-latest $REGISTRY/polish-server:dev-latest
+          #   docker push $REGISTRY/polish-server:dev-latest
+          #   az containerapp update --name polish-dev-server --image $REGISTRY/polish-server:dev-latest
+          #   ssh ${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }} 'docker compose -f /app/docker-compose.yml up -d'
+        env:
+          DEV_HOST: ${{ secrets.DEV_HOST }}
+          DEV_USER: ${{ secrets.DEV_USER }}
+          DEV_SSH_KEY: ${{ secrets.DEV_SSH_KEY }}
+          COSMOS_ENDPOINT: ${{ secrets.COSMOS_ENDPOINT }}
+          COSMOS_KEY: ${{ secrets.COSMOS_KEY }}
+          COSMOS_DATABASE: ${{ secrets.COSMOS_DATABASE }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+      - name: Smoke test
+        run: |
+          echo "Running dev smoke tests..."
+          # curl -sf "${{ vars.APP_URL }}/health" || exit 1
+
+  # ---------------------------------------------------------------------------
+  # Deploy to test
+  # ---------------------------------------------------------------------------
+  deploy-test:
+    name: Deploy to test
+    runs-on: ubuntu-latest
+    needs: [resolve-env, build-frontend, build-server]
+    if: needs.resolve-env.outputs.environment == 'test'
+    environment:
+      name: test
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend
+
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+          path: server
+
+      - name: Load Docker image
+        run: docker load < server/server/server-image.tar
+
+      - name: Deploy frontend
+        run: |
+          echo "Deploying frontend to test environment..."
+          # Add your test environment deployment commands
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_SSH_KEY: ${{ secrets.TEST_SSH_KEY }}
+
+      - name: Deploy server
+        run: |
+          echo "Deploying server to test environment..."
+          # Add your test environment deployment commands
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_SSH_KEY: ${{ secrets.TEST_SSH_KEY }}
+          COSMOS_ENDPOINT: ${{ secrets.COSMOS_ENDPOINT }}
+          COSMOS_KEY: ${{ secrets.COSMOS_KEY }}
+          COSMOS_DATABASE: ${{ secrets.COSMOS_DATABASE }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+      - name: Smoke test
+        run: |
+          echo "Running test environment smoke tests..."
+          # curl -sf "${{ vars.APP_URL }}/health" || exit 1
+
+      - name: Run integration tests
+        run: |
+          echo "Running integration tests against test environment..."
+          # npm run test:integration -- --base-url "${{ vars.APP_URL }}"
+
+  # ---------------------------------------------------------------------------
+  # Deploy to stage
+  # ---------------------------------------------------------------------------
+  deploy-stage:
+    name: Deploy to stage
+    runs-on: ubuntu-latest
+    needs: [resolve-env, build-frontend, build-server]
+    if: needs.resolve-env.outputs.environment == 'stage'
+    environment:
+      name: stage
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend
+
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+          path: server
+
+      - name: Load Docker image
+        run: docker load < server/server/server-image.tar
+
+      - name: Deploy frontend
+        run: |
+          echo "Deploying frontend to stage environment..."
+          # Add your staging deployment commands
+        env:
+          STAGE_HOST: ${{ secrets.STAGE_HOST }}
+          STAGE_USER: ${{ secrets.STAGE_USER }}
+          STAGE_SSH_KEY: ${{ secrets.STAGE_SSH_KEY }}
+
+      - name: Deploy server
+        run: |
+          echo "Deploying server to stage environment..."
+          # Add your staging deployment commands
+        env:
+          STAGE_HOST: ${{ secrets.STAGE_HOST }}
+          STAGE_USER: ${{ secrets.STAGE_USER }}
+          STAGE_SSH_KEY: ${{ secrets.STAGE_SSH_KEY }}
+          COSMOS_ENDPOINT: ${{ secrets.COSMOS_ENDPOINT }}
+          COSMOS_KEY: ${{ secrets.COSMOS_KEY }}
+          COSMOS_DATABASE: ${{ secrets.COSMOS_DATABASE }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+
+      - name: Smoke test
+        run: |
+          echo "Running stage smoke tests..."
+          # curl -sf "${{ vars.APP_URL }}/health" || exit 1
+
+  # ---------------------------------------------------------------------------
+  # Deploy to prod
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+    name: Deploy to prod
+    runs-on: ubuntu-latest
+    needs: [resolve-env, build-frontend, build-server]
+    if: needs.resolve-env.outputs.environment == 'prod'
+    environment:
+      name: prod
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend
+
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+          path: server
+
+      - name: Load Docker image
+        run: docker load < server/server/server-image.tar
+
+      - name: Deploy frontend
+        run: |
+          echo "Deploying frontend to production..."
+          # Add your production deployment commands
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+
+      - name: Deploy server
+        run: |
+          echo "Deploying server to production..."
+          # Add your production deployment commands
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          COSMOS_ENDPOINT: ${{ secrets.COSMOS_ENDPOINT }}
+          COSMOS_KEY: ${{ secrets.COSMOS_KEY }}
+          COSMOS_DATABASE: ${{ secrets.COSMOS_DATABASE }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+
+      - name: Smoke test
+        run: |
+          echo "Running production smoke tests..."
+          # curl -sf "${{ vars.APP_URL }}/health" || exit 1
+
+      - name: Notify deployment
+        if: success()
+        run: |
+          echo "Production deployment completed successfully"
+          echo "Commit: ${{ github.sha }}"
+          echo "Deployed by: ${{ github.actor }}"
+          # Add Slack/Teams/Discord notification here
