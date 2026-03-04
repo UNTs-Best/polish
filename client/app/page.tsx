@@ -347,6 +347,8 @@ export default function LandingPage() {
               >
                 Resources
               </Link>
+            </div>
+            <div className="flex items-center space-x-3">
               <Link href="/auth/login">
                 <Button
                   variant="outline"

@@ -1,6 +1,11 @@
 import { getSupabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
 import UserModel from '../models/user.model.js';
 
+/**
+ * DB columns: id, email, password_hash, first_name, last_name, display_name,
+ *             avatar_url, auth_provider, auth_provider_id, email_verified,
+ *             last_login, created_at, updated_at
+ */
 class UserService {
     constructor() {
         this.supabase = null;
@@ -13,48 +18,42 @@ class UserService {
         return this.supabase;
     }
 
-    // Convert UserModel (camelCase) to database format (snake_case)
     modelToDb(user) {
-        return {
-            id: user.id,
-            email: user.email,
-            password: user.password,
-            first_name: user.firstName,
-            last_name: user.lastName,
-            avatar: user.avatar,
-            provider: user.provider,
-            provider_id: user.providerId,
-            provider_data: user.providerData,
-            email_verified: user.emailVerified,
-            is_active: user.isActive,
-            refresh_token: user.refreshToken,
-            refresh_token_expires_at: user.refreshTokenExpiresAt,
-            created_at: user.createdAt,
-            updated_at: user.updatedAt,
-            last_login_at: user.lastLoginAt
-        };
+        const db = {};
+        if (user.id !== undefined) db.id = user.id;
+        if (user.email !== undefined) db.email = user.email;
+        if (user.password !== undefined) db.password_hash = user.password;
+        if (user.firstName !== undefined) db.first_name = user.firstName;
+        if (user.lastName !== undefined) db.last_name = user.lastName;
+        if (user.avatar !== undefined) db.avatar_url = user.avatar;
+        if (user.provider !== undefined) db.auth_provider = user.provider;
+        if (user.providerId !== undefined) db.auth_provider_id = user.providerId;
+        if (user.emailVerified !== undefined) db.email_verified = user.emailVerified;
+        if (user.createdAt !== undefined) db.created_at = user.createdAt;
+        if (user.updatedAt !== undefined) db.updated_at = user.updatedAt;
+        if (user.lastLoginAt !== undefined) db.last_login = user.lastLoginAt;
+        if (user.firstName || user.lastName) {
+            db.display_name = [user.firstName, user.lastName].filter(Boolean).join(' ');
+        }
+        return db;
     }
 
-    // Convert database format (snake_case) to UserModel (camelCase)
     dbToModel(dbUser) {
         if (!dbUser) return null;
         return new UserModel({
             id: dbUser.id,
             email: dbUser.email,
-            password: dbUser.password,
+            password: dbUser.password_hash,
             firstName: dbUser.first_name,
             lastName: dbUser.last_name,
-            avatar: dbUser.avatar,
-            provider: dbUser.provider,
-            providerId: dbUser.provider_id,
-            providerData: dbUser.provider_data,
+            avatar: dbUser.avatar_url,
+            provider: dbUser.auth_provider,
+            providerId: dbUser.auth_provider_id,
             emailVerified: dbUser.email_verified,
-            isActive: dbUser.is_active,
-            refreshToken: dbUser.refresh_token,
-            refreshTokenExpiresAt: dbUser.refresh_token_expires_at,
+            isActive: true,
             createdAt: dbUser.created_at,
             updatedAt: dbUser.updated_at,
-            lastLoginAt: dbUser.last_login_at
+            lastLoginAt: dbUser.last_login
         });
     }
 
@@ -67,7 +66,7 @@ class UserService {
             .eq('email', email)
             .single();
 
-        if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+        if (error && error.code !== 'PGRST116') throw error;
         return this.dbToModel(data);
     }
 
@@ -77,8 +76,8 @@ class UserService {
         const { data, error } = await supabase
             .from('users')
             .select('*')
-            .eq('provider', provider)
-            .eq('provider_id', providerId)
+            .eq('auth_provider', provider)
+            .eq('auth_provider_id', providerId)
             .single();
 
         if (error && error.code !== 'PGRST116') throw error;
@@ -104,12 +103,10 @@ class UserService {
     async createOAuthUser(provider, providerData) {
         if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
 
-        // Extract user info based on provider
         let userData = {
             provider,
             providerId: providerData.id,
-            providerData,
-            emailVerified: true // OAuth users are pre-verified
+            emailVerified: true
         };
 
         switch (provider) {
@@ -127,7 +124,6 @@ class UserService {
                 break;
             case 'apple':
                 userData.email = providerData.email;
-                // Apple doesn't provide name/avatar in the same way
                 userData.firstName = providerData.name?.firstName;
                 userData.lastName = providerData.name?.lastName;
                 break;
@@ -135,14 +131,11 @@ class UserService {
                 throw new Error(`Unsupported OAuth provider: ${provider}`);
         }
 
-        // Check if user already exists
         let existingUser = await this.getUserbyEmail(userData.email);
         if (existingUser) {
-            // Update existing user with OAuth info if not already set
             if (!existingUser.providerId) {
                 existingUser.provider = provider;
                 existingUser.providerId = userData.providerId;
-                existingUser.providerData = userData.providerData;
                 if (!existingUser.avatar && userData.avatar) {
                     existingUser.avatar = userData.avatar;
                 }
@@ -214,22 +207,6 @@ class UserService {
 
         if (error && error.code !== 'PGRST116') throw error;
         return this.dbToModel(data);
-    }
-
-    async updateRefreshToken(userId, refreshToken, expiresAt) {
-        const user = await this.getUserbyID(userId);
-        if (!user) return null;
-
-        user.setRefreshToken(refreshToken);
-        return await this.updateUser(userId, user.toJSON());
-    }
-
-    async clearRefreshToken(userId) {
-        const user = await this.getUserbyID(userId);
-        if (!user) return null;
-
-        user.clearRefreshToken();
-        return await this.updateUser(userId, user.toJSON());
     }
 
     async findOrCreateUser(email, userData = {}) {

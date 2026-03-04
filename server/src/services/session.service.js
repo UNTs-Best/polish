@@ -4,7 +4,8 @@ import { getSupabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
 import UserModel from '../models/user.model.js';
 
 /**
- * Service for managing user sessions and refresh tokens
+ * DB sessions columns: id, user_id, token, refresh_token, expires_at,
+ *                      ip_address, user_agent, is_active, created_at
  */
 class SessionService {
   constructor() {
@@ -20,68 +21,27 @@ class SessionService {
     return this.supabase;
   }
 
-  // Convert camelCase to snake_case for database
-  sessionToDb(session) {
+  dbToSession(row) {
+    if (!row) return null;
     return {
-      id: session.id,
-      user_id: session.userId,
-      user_agent: session.userAgent,
-      ip_address: session.ipAddress,
-      is_active: session.isActive,
-      created_at: session.createdAt,
-      last_activity_at: session.lastActivityAt,
-      expires_at: session.expiresAt,
-      deactivated_at: session.deactivatedAt
+      id: row.id,
+      userId: row.user_id,
+      token: row.token,
+      refreshToken: row.refresh_token,
+      userAgent: row.user_agent,
+      ipAddress: row.ip_address,
+      isActive: row.is_active,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at
     };
   }
 
-  // Convert snake_case to camelCase from database
-  dbToSession(dbSession) {
-    if (!dbSession) return null;
-    return {
-      id: dbSession.id,
-      userId: dbSession.user_id,
-      userAgent: dbSession.user_agent,
-      ipAddress: dbSession.ip_address,
-      isActive: dbSession.is_active,
-      createdAt: dbSession.created_at,
-      lastActivityAt: dbSession.last_activity_at,
-      expiresAt: dbSession.expires_at,
-      deactivatedAt: dbSession.deactivated_at
-    };
-  }
-
-  // Helper to convert UserModel to database format
-  userToDb(user) {
-    return {
-      id: user.id,
-      email: user.email,
-      password: user.password,
-      first_name: user.firstName,
-      last_name: user.lastName,
-      avatar: user.avatar,
-      provider: user.provider,
-      provider_id: user.providerId,
-      provider_data: user.providerData,
-      email_verified: user.emailVerified,
-      is_active: user.isActive,
-      refresh_token: user.refreshToken,
-      refresh_token_expires_at: user.refreshTokenExpiresAt,
-      created_at: user.createdAt,
-      updated_at: user.updatedAt,
-      last_login_at: user.lastLoginAt
-    };
-  }
-
-  /**
-   * Generate access token (short-lived)
-   */
   generateAccessToken(user) {
     return jwt.sign(
       {
         id: user.id,
         email: user.email,
-        provider: user.provider,
+        provider: user.provider || user.auth_provider,
         type: 'access'
       },
       this.jwtSecret,
@@ -89,9 +49,6 @@ class SessionService {
     );
   }
 
-  /**
-   * Generate refresh token (long-lived)
-   */
   generateRefreshToken(user) {
     const tokenId = uuidv4();
     return jwt.sign(
@@ -106,9 +63,6 @@ class SessionService {
     );
   }
 
-  /**
-   * Verify access token
-   */
   verifyAccessToken(token) {
     try {
       const decoded = jwt.verify(token, this.jwtSecret);
@@ -121,9 +75,6 @@ class SessionService {
     }
   }
 
-  /**
-   * Verify refresh token
-   */
   verifyRefreshToken(token) {
     try {
       const decoded = jwt.verify(token, this.jwtRefreshSecret);
@@ -136,33 +87,23 @@ class SessionService {
     }
   }
 
-  /**
-   * Create a new session for user
-   */
-  async createSession(userId, userAgent = null, ipAddress = null) {
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase not configured');
-    }
-
+  async createSession(userId, accessToken, refreshToken, userAgent = null, ipAddress = null) {
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = this.getSupabase();
-    const sessionId = uuidv4();
-
-    const session = {
-      id: sessionId,
-      userId,
-      userAgent,
-      ipAddress,
-      createdAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-      isActive: true,
-      expiresAt: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)).toISOString() // 7 days
-    };
-
-    const dbSession = this.sessionToDb(session);
 
     const { data, error } = await supabase
       .from('sessions')
-      .insert(dbSession)
+      .insert({
+        id: uuidv4(),
+        user_id: userId,
+        token: accessToken,
+        refresh_token: refreshToken,
+        user_agent: userAgent,
+        ip_address: ipAddress,
+        is_active: true,
+        expires_at: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)).toISOString(),
+        created_at: new Date().toISOString()
+      })
       .select()
       .single();
 
@@ -170,82 +111,48 @@ class SessionService {
     return this.dbToSession(data);
   }
 
-  /**
-   * Get active sessions for user
-   */
   async getUserSessions(userId) {
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase not configured');
-    }
-
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = this.getSupabase();
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
       .eq('user_id', userId)
       .eq('is_active', true)
-      .order('last_activity_at', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return data.map(s => this.dbToSession(s));
   }
 
-  /**
-   * Update session activity
-   */
   async updateSessionActivity(sessionId) {
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase not configured');
-    }
-
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = this.getSupabase();
 
-    // Get session first
-    const { data: session, error: fetchError } = await supabase
+    const { data: session, error } = await supabase
       .from('sessions')
       .select('*')
       .eq('id', sessionId)
       .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
-    if (!session || !session.is_active) {
-      return null;
-    }
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!session || !session.is_active) return null;
 
-    // Check if session expired
     if (new Date(session.expires_at) < new Date()) {
       await this.deactivateSession(sessionId);
       return null;
     }
 
-    // Update last activity
-    const { data: updated, error } = await supabase
-      .from('sessions')
-      .update({ last_activity_at: new Date().toISOString() })
-      .eq('id', sessionId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return this.dbToSession(updated);
+    return this.dbToSession(session);
   }
 
-  /**
-   * Deactivate a session
-   */
   async deactivateSession(sessionId) {
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase not configured');
-    }
-
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = this.getSupabase();
 
     const { data, error } = await supabase
       .from('sessions')
-      .update({
-        is_active: false,
-        deactivated_at: new Date().toISOString()
-      })
+      .update({ is_active: false })
       .eq('id', sessionId)
       .select();
 
@@ -253,22 +160,13 @@ class SessionService {
     return data && data.length > 0;
   }
 
-  /**
-   * Deactivate all user sessions
-   */
   async deactivateAllUserSessions(userId) {
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase not configured');
-    }
-
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = this.getSupabase();
 
     const { data, error } = await supabase
       .from('sessions')
-      .update({
-        is_active: false,
-        deactivated_at: new Date().toISOString()
-      })
+      .update({ is_active: false })
       .eq('user_id', userId)
       .eq('is_active', true)
       .select();
@@ -277,55 +175,42 @@ class SessionService {
     return data ? data.length : 0;
   }
 
-  /**
-   * Login user and create session
-   */
   async loginUser(user, userAgent = null, ipAddress = null) {
     const supabase = this.getSupabase();
 
-    // Update user's last login
-    user.updateLastLogin();
+    await supabase
+      .from('users')
+      .update({ last_login: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', user.id);
 
-    // Generate tokens
     const accessToken = this.generateAccessToken(user);
     const refreshToken = this.generateRefreshToken(user);
 
-    // Store refresh token in user
-    user.setRefreshToken(refreshToken);
-
-    // Update user in database
-    const dbUser = this.userToDb(user);
-    const { data: updatedUser, error } = await supabase
-      .from('users')
-      .update(dbUser)
-      .eq('id', user.id)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Create session
-    const session = await this.createSession(user.id, userAgent, ipAddress);
+    const session = await this.createSession(user.id, accessToken, refreshToken, userAgent, ipAddress);
 
     return {
-      user: updatedUser,
+      user: user.toPublicProfile ? user.toPublicProfile() : user,
       accessToken,
       refreshToken,
       session,
-      expiresIn: parseInt(process.env.JWT_ACCESS_EXPIRES_IN?.replace('m', '') || '15') * 60 // seconds
+      expiresIn: parseInt(process.env.JWT_ACCESS_EXPIRES_IN?.replace('m', '') || '15') * 60
     };
   }
 
-  /**
-   * Refresh access token using refresh token
-   */
   async refreshAccessToken(refreshToken) {
     const supabase = this.getSupabase();
-
-    // Verify refresh token
     const decoded = this.verifyRefreshToken(refreshToken);
 
-    // Get user
+    const { data: session, error: sessionErr } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('refresh_token', refreshToken)
+      .eq('is_active', true)
+      .single();
+
+    if (sessionErr && sessionErr.code !== 'PGRST116') throw sessionErr;
+    if (!session) throw new Error('Invalid refresh token - no active session');
+
     const { data: userData, error } = await supabase
       .from('users')
       .select('*')
@@ -333,38 +218,29 @@ class SessionService {
       .single();
 
     if (error && error.code !== 'PGRST116') throw error;
+    if (!userData) throw new Error('User not found');
 
-    if (!userData || !userData.is_active) {
-      throw new Error('User not found or inactive');
-    }
-
-    // Check if refresh token matches
-    if (userData.refresh_token !== refreshToken) {
-      throw new Error('Invalid refresh token');
-    }
-
-    // Convert to UserModel
     const user = new UserModel({
       id: userData.id,
       email: userData.email,
-      password: userData.password,
+      password: userData.password_hash,
       firstName: userData.first_name,
       lastName: userData.last_name,
-      avatar: userData.avatar,
-      provider: userData.provider,
-      providerId: userData.provider_id,
-      providerData: userData.provider_data,
+      avatar: userData.avatar_url,
+      provider: userData.auth_provider,
+      providerId: userData.auth_provider_id,
       emailVerified: userData.email_verified,
-      isActive: userData.is_active,
-      refreshToken: userData.refresh_token,
-      refreshTokenExpiresAt: userData.refresh_token_expires_at,
       createdAt: userData.created_at,
       updatedAt: userData.updated_at,
-      lastLoginAt: userData.last_login_at
+      lastLoginAt: userData.last_login
     });
 
-    // Generate new access token
     const accessToken = this.generateAccessToken(user);
+
+    await supabase
+      .from('sessions')
+      .update({ token: accessToken })
+      .eq('id', session.id);
 
     return {
       accessToken,
@@ -372,63 +248,12 @@ class SessionService {
     };
   }
 
-  /**
-   * Logout user (invalidate refresh token and sessions)
-   */
   async logoutUser(userId, sessionId = null) {
-    const supabase = this.getSupabase();
-
-    // Get user
-    const { data: userData, error: fetchError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
-
-    if (!userData) {
-      return false;
-    }
-
-    const user = new UserModel({
-      id: userData.id,
-      email: userData.email,
-      password: userData.password,
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      avatar: userData.avatar,
-      provider: userData.provider,
-      providerId: userData.provider_id,
-      providerData: userData.provider_data,
-      emailVerified: userData.email_verified,
-      isActive: userData.is_active,
-      refreshToken: userData.refresh_token,
-      refreshTokenExpiresAt: userData.refresh_token_expires_at,
-      createdAt: userData.created_at,
-      updatedAt: userData.updated_at,
-      lastLoginAt: userData.last_login_at
-    });
-
-    // Clear refresh token
-    user.clearRefreshToken();
-
-    // Update user
-    const dbUser = this.userToDb(user);
-    const { error } = await supabase
-      .from('users')
-      .update(dbUser)
-      .eq('id', userId);
-
-    if (error) throw error;
-
-    // Deactivate specific session or all sessions
     if (sessionId) {
       await this.deactivateSession(sessionId);
     } else {
       await this.deactivateAllUserSessions(userId);
     }
-
     return true;
   }
 }

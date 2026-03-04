@@ -3,40 +3,40 @@ import { getSupabaseAdmin, isSupabaseConfigured } from "../config/supabase.js";
 import VersionService from "./version.service.js";
 
 /**
- * Convert camelCase model fields to snake_case DB columns
+ * DB columns: id, user_id, title, content, document_type, status,
+ *             file_url, file_name, file_size, mime_type, metadata,
+ *             created_at, updated_at
  */
+
 function modelToDb(data) {
-  const map = {
-    ownerId: 'owner_id',
-    blobName: 'blob_name',
-    blobUrl: 'blob_url',
-    mimeType: 'mime_type',
-    createdAt: 'created_at',
-    updatedAt: 'updated_at',
-  };
-  const result = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (value === undefined) continue;
-    result[map[key] || key] = value;
-  }
-  return result;
+  const db = {};
+  if (data.id !== undefined) db.id = data.id;
+  if (data.ownerId !== undefined) db.user_id = data.ownerId;
+  if (data.title !== undefined) db.title = data.title;
+  if (data.content !== undefined) db.content = data.content;
+  if (data.blobName !== undefined) db.file_name = data.blobName;
+  if (data.blobUrl !== undefined) db.file_url = data.blobUrl;
+  if (data.size !== undefined) db.file_size = data.size;
+  if (data.mimeType !== undefined) db.mime_type = data.mimeType;
+  if (data.createdAt !== undefined) db.created_at = data.createdAt;
+  if (data.updatedAt !== undefined) db.updated_at = data.updatedAt;
+  return db;
 }
 
-/**
- * Convert snake_case DB columns to camelCase model fields
- */
 function dbToModel(row) {
   if (!row) return null;
   return {
     id: row.id,
     title: row.title,
-    ownerId: row.owner_id,
-    blobName: row.blob_name,
-    blobUrl: row.blob_url,
-    size: row.size,
+    ownerId: row.user_id,
+    blobName: row.file_name,
+    blobUrl: row.file_url,
+    size: row.file_size,
     mimeType: row.mime_type,
-    version: row.version,
     content: row.content,
+    documentType: row.document_type,
+    status: row.status,
+    metadata: row.metadata,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -57,7 +57,6 @@ export async function createDocumentMeta(data) {
     blobUrl: data.blobUrl,
     size: data.size || 0,
     mimeType: data.mimeType || null,
-    version: data.version || 1,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -84,7 +83,7 @@ class DocumentService {
     const { data, error } = await supabase
       .from('documents')
       .select('*')
-      .eq('owner_id', ownerId)
+      .eq('user_id', ownerId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -103,7 +102,6 @@ class DocumentService {
       blobUrl: data.blobUrl,
       size: data.size || 0,
       mimeType: data.mimeType || null,
-      version: data.version || 1,
       content: data.content || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -124,9 +122,8 @@ class DocumentService {
       ownerId: data.ownerId,
       title: data.title,
       content: data.content || '',
-      changes: ['Document created'],
+      changes: 'Document created',
       createdBy: data.ownerId,
-      metadata: { action: 'create' }
     });
 
     return doc;
@@ -152,9 +149,8 @@ class DocumentService {
           ownerId: existing.ownerId,
           title: updates.title || existing.title,
           content: updates.content !== undefined ? updates.content : existing.content,
-          changes,
+          changes: changes.join('; '),
           createdBy: updatedBy || existing.ownerId,
-          metadata: { action: 'update' }
         });
       }
     }
@@ -178,7 +174,6 @@ class DocumentService {
     const existing = await this.getDocumentbyId(id);
     if (!existing) return null;
 
-    // Delete all versions first
     await this.versionService.deleteDocumentVersions(id);
 
     const supabase = getSupabaseAdmin();
@@ -201,7 +196,7 @@ class DocumentService {
       .eq('id', id)
       .single();
 
-    if (error && error.code === 'PGRST116') return null; // not found
+    if (error && error.code === 'PGRST116') return null;
     if (error) throw error;
     return dbToModel(row);
   }

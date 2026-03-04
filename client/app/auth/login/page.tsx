@@ -41,7 +41,7 @@ export default function LoginPage() {
       localStorage.setItem("refreshToken", data.refreshToken)
       localStorage.setItem("user", JSON.stringify(data.user))
 
-      router.push("/dashboard")
+      router.push("/editor")
     } catch {
       setError("Unable to connect to server")
     } finally {
