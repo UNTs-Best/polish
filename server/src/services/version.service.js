@@ -2,76 +2,50 @@ import { v4 as uuidv4 } from "uuid";
 import { getSupabaseAdmin, isSupabaseConfigured } from "../config/supabase.js";
 
 /**
- * Convert camelCase model fields to snake_case DB columns
+ * DB columns: id, document_id, version_number, content, change_summary,
+ *             created_by, created_at
  */
-function modelToDb(data) {
-  const map = {
-    documentId: 'document_id',
-    ownerId: 'owner_id',
-    previousVersion: 'previous_version_id',
-    createdAt: 'created_at',
-    createdBy: 'created_by',
-  };
-  const result = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (value === undefined) continue;
-    result[map[key] || key] = value;
-  }
-  return result;
-}
 
-/**
- * Convert snake_case DB columns to camelCase model fields
- */
 function dbToModel(row) {
   if (!row) return null;
   return {
     id: row.id,
     documentId: row.document_id,
-    version: row.version,
-    ownerId: row.owner_id,
-    title: row.title,
+    version: row.version_number,
     content: row.content,
-    changes: row.changes || [],
-    previousVersion: row.previous_version_id,
-    createdAt: row.created_at,
+    changes: row.change_summary ? [row.change_summary] : [],
     createdBy: row.created_by,
-    metadata: row.metadata,
+    createdAt: row.created_at,
   };
 }
 
-/**
- * Service for managing document versions and history
- */
 class VersionService {
-  /**
-   * Create a new version for a document
-   */
   async createVersion(documentId, versionData) {
     if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = getSupabaseAdmin();
 
-    // Get the latest version number for this document
     const latestVersion = await this.getLatestVersion(documentId);
     const newVersionNumber = latestVersion ? latestVersion.version + 1 : 1;
 
-    const item = modelToDb({
-      id: uuidv4(),
-      documentId,
-      version: newVersionNumber,
-      ownerId: versionData.ownerId,
-      title: versionData.title,
-      content: versionData.content || '',
-      changes: versionData.changes || [],
-      previousVersion: latestVersion ? latestVersion.id : null,
-      createdAt: versionData.createdAt || new Date().toISOString(),
-      createdBy: versionData.createdBy || versionData.ownerId,
-      metadata: versionData.metadata || {},
-    });
+    // changes can be a string or array — normalize to string for change_summary
+    let changeSummary = '';
+    if (Array.isArray(versionData.changes)) {
+      changeSummary = versionData.changes.join('; ');
+    } else if (typeof versionData.changes === 'string') {
+      changeSummary = versionData.changes;
+    }
 
     const { data: row, error } = await supabase
       .from('versions')
-      .insert(item)
+      .insert({
+        id: uuidv4(),
+        document_id: documentId,
+        version_number: newVersionNumber,
+        content: versionData.content || '',
+        change_summary: changeSummary,
+        created_by: versionData.createdBy || versionData.ownerId || null,
+        created_at: new Date().toISOString(),
+      })
       .select()
       .single();
 
@@ -79,9 +53,6 @@ class VersionService {
     return dbToModel(row);
   }
 
-  /**
-   * Get all versions for a document
-   */
   async getDocumentVersions(documentId) {
     if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = getSupabaseAdmin();
@@ -90,15 +61,12 @@ class VersionService {
       .from('versions')
       .select('*')
       .eq('document_id', documentId)
-      .order('version', { ascending: false });
+      .order('version_number', { ascending: false });
 
     if (error) throw error;
     return (data || []).map(dbToModel);
   }
 
-  /**
-   * Get a specific version by ID
-   */
   async getVersionById(versionId) {
     if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = getSupabaseAdmin();
@@ -114,9 +82,6 @@ class VersionService {
     return dbToModel(row);
   }
 
-  /**
-   * Get the latest version for a document
-   */
   async getLatestVersion(documentId) {
     if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = getSupabaseAdmin();
@@ -125,45 +90,27 @@ class VersionService {
       .from('versions')
       .select('*')
       .eq('document_id', documentId)
-      .order('version', { ascending: false })
+      .order('version_number', { ascending: false })
       .limit(1);
 
     if (error) throw error;
     return data && data.length > 0 ? dbToModel(data[0]) : null;
   }
 
-  /**
-   * Restore a document to a specific version
-   */
   async restoreVersion(documentId, versionId, restoredBy) {
     const version = await this.getVersionById(versionId);
-    if (!version) {
-      throw new Error('Version not found');
-    }
-
+    if (!version) throw new Error('Version not found');
     if (version.documentId !== documentId) {
       throw new Error('Version does not belong to the specified document');
     }
 
-    const restoredVersion = await this.createVersion(documentId, {
-      ownerId: version.ownerId,
-      title: version.title,
+    return await this.createVersion(documentId, {
       content: version.content,
-      changes: [`Restored to version ${version.version}`],
+      changes: `Restored to version ${version.version}`,
       createdBy: restoredBy,
-      metadata: {
-        ...version.metadata,
-        restoredFrom: versionId,
-        action: 'restore'
-      }
     });
-
-    return restoredVersion;
   }
 
-  /**
-   * Delete all versions of a document
-   */
   async deleteDocumentVersions(documentId) {
     if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const supabase = getSupabaseAdmin();
@@ -176,19 +123,13 @@ class VersionService {
     if (error) throw error;
   }
 
-  /**
-   * Compare two versions
-   */
   async compareVersions(versionId1, versionId2) {
     const [version1, version2] = await Promise.all([
       this.getVersionById(versionId1),
       this.getVersionById(versionId2)
     ]);
 
-    if (!version1 || !version2) {
-      throw new Error('One or both versions not found');
-    }
-
+    if (!version1 || !version2) throw new Error('One or both versions not found');
     if (version1.documentId !== version2.documentId) {
       throw new Error('Versions belong to different documents');
     }
@@ -198,7 +139,6 @@ class VersionService {
       version1: {
         id: version1.id,
         version: version1.version,
-        title: version1.title,
         content: version1.content,
         createdAt: version1.createdAt,
         createdBy: version1.createdBy
@@ -206,7 +146,6 @@ class VersionService {
       version2: {
         id: version2.id,
         version: version2.version,
-        title: version2.title,
         content: version2.content,
         createdAt: version2.createdAt,
         createdBy: version2.createdBy
@@ -214,16 +153,11 @@ class VersionService {
     };
   }
 
-  /**
-   * Get version history summary
-   */
   async getVersionHistory(documentId, limit = 50) {
     const versions = await this.getDocumentVersions(documentId);
-
     return versions.slice(0, limit).map(version => ({
       id: version.id,
       version: version.version,
-      title: version.title,
       createdAt: version.createdAt,
       createdBy: version.createdBy,
       changes: version.changes,
