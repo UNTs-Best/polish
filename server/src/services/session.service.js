@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { getContainer, isCosmosConfigured } from '../config/db.js';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
 import UserModel from '../models/user.model.js';
 
 /**
@@ -8,24 +8,69 @@ import UserModel from '../models/user.model.js';
  */
 class SessionService {
   constructor() {
-    this.usersContainer = null;
-    this.sessionsContainer = null;
+    this.supabase = null;
     this.jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret';
     this.jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || 'your-refresh-secret';
   }
 
-  async getUsersContainer() {
-    if (!this.usersContainer) {
-      this.usersContainer = await getContainer('Users');
+  getSupabase() {
+    if (!this.supabase) {
+      this.supabase = getSupabaseAdmin();
     }
-    return this.usersContainer;
+    return this.supabase;
   }
 
-  async getSessionsContainer() {
-    if (!this.sessionsContainer) {
-      this.sessionsContainer = await getContainer('Sessions');
-    }
-    return this.sessionsContainer;
+  // Convert camelCase to snake_case for database
+  sessionToDb(session) {
+    return {
+      id: session.id,
+      user_id: session.userId,
+      user_agent: session.userAgent,
+      ip_address: session.ipAddress,
+      is_active: session.isActive,
+      created_at: session.createdAt,
+      last_activity_at: session.lastActivityAt,
+      expires_at: session.expiresAt,
+      deactivated_at: session.deactivatedAt
+    };
+  }
+
+  // Convert snake_case to camelCase from database
+  dbToSession(dbSession) {
+    if (!dbSession) return null;
+    return {
+      id: dbSession.id,
+      userId: dbSession.user_id,
+      userAgent: dbSession.user_agent,
+      ipAddress: dbSession.ip_address,
+      isActive: dbSession.is_active,
+      createdAt: dbSession.created_at,
+      lastActivityAt: dbSession.last_activity_at,
+      expiresAt: dbSession.expires_at,
+      deactivatedAt: dbSession.deactivated_at
+    };
+  }
+
+  // Helper to convert UserModel to database format
+  userToDb(user) {
+    return {
+      id: user.id,
+      email: user.email,
+      password: user.password,
+      first_name: user.firstName,
+      last_name: user.lastName,
+      avatar: user.avatar,
+      provider: user.provider,
+      provider_id: user.providerId,
+      provider_data: user.providerData,
+      email_verified: user.emailVerified,
+      is_active: user.isActive,
+      refresh_token: user.refreshToken,
+      refresh_token_expires_at: user.refreshTokenExpiresAt,
+      created_at: user.createdAt,
+      updated_at: user.updatedAt,
+      last_login_at: user.lastLoginAt
+    };
   }
 
   /**
@@ -95,11 +140,11 @@ class SessionService {
    * Create a new session for user
    */
   async createSession(userId, userAgent = null, ipAddress = null) {
-    if (!isCosmosConfigured()) {
-      throw new Error('CosmosDB not configured');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
     }
 
-    const container = await this.getSessionsContainer();
+    const supabase = this.getSupabase();
     const sessionId = uuidv4();
 
     const session = {
@@ -113,124 +158,131 @@ class SessionService {
       expiresAt: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)).toISOString() // 7 days
     };
 
-    const { resource } = await container.items.create(session);
-    return resource;
+    const dbSession = this.sessionToDb(session);
+
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert(dbSession)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return this.dbToSession(data);
   }
 
   /**
    * Get active sessions for user
    */
   async getUserSessions(userId) {
-    if (!isCosmosConfigured()) {
-      throw new Error('CosmosDB not configured');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
     }
 
-    const container = await this.getSessionsContainer();
-    const query = {
-      query: 'SELECT * FROM c WHERE c.userId = @userId AND c.isActive = true ORDER BY c.lastActivityAt DESC',
-      parameters: [{ name: '@userId', value: userId }]
-    };
+    const supabase = this.getSupabase();
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('last_activity_at', { ascending: false });
 
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources;
+    if (error) throw error;
+    return data.map(s => this.dbToSession(s));
   }
 
   /**
    * Update session activity
    */
   async updateSessionActivity(sessionId) {
-    if (!isCosmosConfigured()) {
-      throw new Error('CosmosDB not configured');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
     }
 
-    const container = await this.getSessionsContainer();
-    const query = {
-      query: 'SELECT TOP 1 * FROM c WHERE c.id = @sessionId',
-      parameters: [{ name: '@sessionId', value: sessionId }]
-    };
+    const supabase = this.getSupabase();
 
-    const { resources } = await container.items.query(query).fetchAll();
-    const session = resources[0];
+    // Get session first
+    const { data: session, error: fetchError } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
 
-    if (!session || !session.isActive) {
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+    if (!session || !session.is_active) {
       return null;
     }
 
     // Check if session expired
-    if (new Date(session.expiresAt) < new Date()) {
+    if (new Date(session.expires_at) < new Date()) {
       await this.deactivateSession(sessionId);
       return null;
     }
 
     // Update last activity
-    const updatedSession = {
-      ...session,
-      lastActivityAt: new Date().toISOString()
-    };
+    const { data: updated, error } = await supabase
+      .from('sessions')
+      .update({ last_activity_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .select()
+      .single();
 
-    const { resource } = await container.item(sessionId, session.userId).replace(updatedSession);
-    return resource;
+    if (error) throw error;
+    return this.dbToSession(updated);
   }
 
   /**
    * Deactivate a session
    */
   async deactivateSession(sessionId) {
-    if (!isCosmosConfigured()) {
-      throw new Error('CosmosDB not configured');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
     }
 
-    const container = await this.getSessionsContainer();
-    const query = {
-      query: 'SELECT TOP 1 * FROM c WHERE c.id = @sessionId',
-      parameters: [{ name: '@sessionId', value: sessionId }]
-    };
+    const supabase = this.getSupabase();
 
-    const { resources } = await container.items.query(query).fetchAll();
-    const session = resources[0];
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({
+        is_active: false,
+        deactivated_at: new Date().toISOString()
+      })
+      .eq('id', sessionId)
+      .select();
 
-    if (!session) {
-      return false;
-    }
-
-    const updatedSession = {
-      ...session,
-      isActive: false,
-      deactivatedAt: new Date().toISOString()
-    };
-
-    await container.item(sessionId, session.userId).replace(updatedSession);
-    return true;
+    if (error) throw error;
+    return data && data.length > 0;
   }
 
   /**
    * Deactivate all user sessions
    */
   async deactivateAllUserSessions(userId) {
-    if (!isCosmosConfigured()) {
-      throw new Error('CosmosDB not configured');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
     }
 
-    const container = await this.getSessionsContainer();
-    const sessions = await this.getUserSessions(userId);
+    const supabase = this.getSupabase();
 
-    const promises = sessions.map(session => {
-      const updatedSession = {
-        ...session,
-        isActive: false,
-        deactivatedAt: new Date().toISOString()
-      };
-      return container.item(session.id, session.userId).replace(updatedSession);
-    });
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({
+        is_active: false,
+        deactivated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .select();
 
-    await Promise.all(promises);
-    return sessions.length;
+    if (error) throw error;
+    return data ? data.length : 0;
   }
 
   /**
    * Login user and create session
    */
   async loginUser(user, userAgent = null, ipAddress = null) {
+    const supabase = this.getSupabase();
+
     // Update user's last login
     user.updateLastLogin();
 
@@ -242,8 +294,15 @@ class SessionService {
     user.setRefreshToken(refreshToken);
 
     // Update user in database
-    const usersContainer = await this.getUsersContainer();
-    const { resource: updatedUser } = await usersContainer.item(user.id, user.email).replace(user.toJSON());
+    const dbUser = this.userToDb(user);
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update(dbUser)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
 
     // Create session
     const session = await this.createSession(user.id, userAgent, ipAddress);
@@ -261,29 +320,48 @@ class SessionService {
    * Refresh access token using refresh token
    */
   async refreshAccessToken(refreshToken) {
+    const supabase = this.getSupabase();
+
     // Verify refresh token
     const decoded = this.verifyRefreshToken(refreshToken);
 
     // Get user
-    const usersContainer = await this.getUsersContainer();
-    const query = {
-      query: 'SELECT TOP 1 * FROM c WHERE c.id = @userId',
-      parameters: [{ name: '@userId', value: decoded.id }]
-    };
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', decoded.id)
+      .single();
 
-    const { resources } = await usersContainer.items.query(query).fetchAll();
-    const userData = resources[0];
+    if (error && error.code !== 'PGRST116') throw error;
 
-    if (!userData || !userData.isActive) {
+    if (!userData || !userData.is_active) {
       throw new Error('User not found or inactive');
     }
 
     // Check if refresh token matches
-    if (userData.refreshToken !== refreshToken) {
+    if (userData.refresh_token !== refreshToken) {
       throw new Error('Invalid refresh token');
     }
 
-    const user = new UserModel(userData);
+    // Convert to UserModel
+    const user = new UserModel({
+      id: userData.id,
+      email: userData.email,
+      password: userData.password,
+      firstName: userData.first_name,
+      lastName: userData.last_name,
+      avatar: userData.avatar,
+      provider: userData.provider,
+      providerId: userData.provider_id,
+      providerData: userData.provider_data,
+      emailVerified: userData.email_verified,
+      isActive: userData.is_active,
+      refreshToken: userData.refresh_token,
+      refreshTokenExpiresAt: userData.refresh_token_expires_at,
+      createdAt: userData.created_at,
+      updatedAt: userData.updated_at,
+      lastLoginAt: userData.last_login_at
+    });
 
     // Generate new access token
     const accessToken = this.generateAccessToken(user);
@@ -298,27 +376,51 @@ class SessionService {
    * Logout user (invalidate refresh token and sessions)
    */
   async logoutUser(userId, sessionId = null) {
-    // Get user
-    const usersContainer = await this.getUsersContainer();
-    const query = {
-      query: 'SELECT TOP 1 * FROM c WHERE c.id = @userId',
-      parameters: [{ name: '@userId', value: userId }]
-    };
+    const supabase = this.getSupabase();
 
-    const { resources } = await usersContainer.items.query(query).fetchAll();
-    const userData = resources[0];
+    // Get user
+    const { data: userData, error: fetchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
 
     if (!userData) {
       return false;
     }
 
-    const user = new UserModel(userData);
+    const user = new UserModel({
+      id: userData.id,
+      email: userData.email,
+      password: userData.password,
+      firstName: userData.first_name,
+      lastName: userData.last_name,
+      avatar: userData.avatar,
+      provider: userData.provider,
+      providerId: userData.provider_id,
+      providerData: userData.provider_data,
+      emailVerified: userData.email_verified,
+      isActive: userData.is_active,
+      refreshToken: userData.refresh_token,
+      refreshTokenExpiresAt: userData.refresh_token_expires_at,
+      createdAt: userData.created_at,
+      updatedAt: userData.updated_at,
+      lastLoginAt: userData.last_login_at
+    });
 
     // Clear refresh token
     user.clearRefreshToken();
 
     // Update user
-    await usersContainer.item(userId, user.email).replace(user.toJSON());
+    const dbUser = this.userToDb(user);
+    const { error } = await supabase
+      .from('users')
+      .update(dbUser)
+      .eq('id', userId);
+
+    if (error) throw error;
 
     // Deactivate specific session or all sessions
     if (sessionId) {

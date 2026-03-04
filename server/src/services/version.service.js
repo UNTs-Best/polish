@@ -1,89 +1,135 @@
 import { v4 as uuidv4 } from "uuid";
-import { getContainer } from "../config/db.js";
-import VersionModel from "../models/version.model.js";
+import { getSupabaseAdmin, isSupabaseConfigured } from "../config/supabase.js";
+
+/**
+ * Convert camelCase model fields to snake_case DB columns
+ */
+function modelToDb(data) {
+  const map = {
+    documentId: 'document_id',
+    ownerId: 'owner_id',
+    previousVersion: 'previous_version_id',
+    createdAt: 'created_at',
+    createdBy: 'created_by',
+  };
+  const result = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    result[map[key] || key] = value;
+  }
+  return result;
+}
+
+/**
+ * Convert snake_case DB columns to camelCase model fields
+ */
+function dbToModel(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    version: row.version,
+    ownerId: row.owner_id,
+    title: row.title,
+    content: row.content,
+    changes: row.changes || [],
+    previousVersion: row.previous_version_id,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    metadata: row.metadata,
+  };
+}
 
 /**
  * Service for managing document versions and history
  */
 class VersionService {
-  constructor() {
-    this.versionsContainer = null;
-    this.documentsContainer = null;
-  }
-
-  async getVersionsContainer() {
-    if (!this.versionsContainer) {
-      this.versionsContainer = await getContainer("Versions");
-    }
-    return this.versionsContainer;
-  }
-
-  async getDocumentsContainer() {
-    if (!this.documentsContainer) {
-      this.documentsContainer = await getContainer("Documents");
-    }
-    return this.documentsContainer;
-  }
-
   /**
    * Create a new version for a document
    */
   async createVersion(documentId, versionData) {
-    const container = await this.getVersionsContainer();
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
 
     // Get the latest version number for this document
     const latestVersion = await this.getLatestVersion(documentId);
     const newVersionNumber = latestVersion ? latestVersion.version + 1 : 1;
 
-    const version = new VersionModel({
-      ...versionData,
+    const item = modelToDb({
+      id: uuidv4(),
       documentId,
       version: newVersionNumber,
+      ownerId: versionData.ownerId,
+      title: versionData.title,
+      content: versionData.content || '',
+      changes: versionData.changes || [],
       previousVersion: latestVersion ? latestVersion.id : null,
-      createdAt: new Date().toISOString(),
+      createdAt: versionData.createdAt || new Date().toISOString(),
+      createdBy: versionData.createdBy || versionData.ownerId,
+      metadata: versionData.metadata || {},
     });
 
-    const { resource } = await container.items.create(version.toJSON());
-    return resource;
+    const { data: row, error } = await supabase
+      .from('versions')
+      .insert(item)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return dbToModel(row);
   }
 
   /**
    * Get all versions for a document
    */
   async getDocumentVersions(documentId) {
-    const container = await this.getVersionsContainer();
-    const query = {
-      query: 'SELECT * FROM c WHERE c.documentId = @documentId ORDER BY c.version DESC',
-      parameters: [{ name: '@documentId', value: documentId }]
-    };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources;
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from('versions')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('version', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map(dbToModel);
   }
 
   /**
    * Get a specific version by ID
    */
   async getVersionById(versionId) {
-    const container = await this.getVersionsContainer();
-    const query = {
-      query: 'SELECT * FROM c WHERE c.id = @id',
-      parameters: [{ name: '@id', value: versionId }]
-    };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources[0] || null;
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data: row, error } = await supabase
+      .from('versions')
+      .select('*')
+      .eq('id', versionId)
+      .single();
+
+    if (error && error.code === 'PGRST116') return null;
+    if (error) throw error;
+    return dbToModel(row);
   }
 
   /**
    * Get the latest version for a document
    */
   async getLatestVersion(documentId) {
-    const container = await this.getVersionsContainer();
-    const query = {
-      query: 'SELECT TOP 1 * FROM c WHERE c.documentId = @documentId ORDER BY c.version DESC',
-      parameters: [{ name: '@documentId', value: documentId }]
-    };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources[0] || null;
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from('versions')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('version', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return data && data.length > 0 ? dbToModel(data[0]) : null;
   }
 
   /**
@@ -99,7 +145,6 @@ class VersionService {
       throw new Error('Version does not belong to the specified document');
     }
 
-    // Create a new version with the restored content
     const restoredVersion = await this.createVersion(documentId, {
       ownerId: version.ownerId,
       title: version.title,
@@ -120,15 +165,15 @@ class VersionService {
    * Delete all versions of a document
    */
   async deleteDocumentVersions(documentId) {
-    const container = await this.getVersionsContainer();
-    const versions = await this.getDocumentVersions(documentId);
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
 
-    const deletePromises = versions.map(version =>
-      container.item(version.id, version.ownerId).delete()
-    );
+    const { error } = await supabase
+      .from('versions')
+      .delete()
+      .eq('document_id', documentId);
 
-    await Promise.all(deletePromises);
-    return versions.length;
+    if (error) throw error;
   }
 
   /**

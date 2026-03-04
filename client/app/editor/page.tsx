@@ -723,6 +723,7 @@ export default function EditorPage() {
           onSuggestionApply={handleApplySuggestion}
           onUndo={handleUndoChanges}
           simulateError={simulateChatError}
+          documentContent={documentContent}
         />
       </div>
 

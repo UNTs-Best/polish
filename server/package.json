@@ -18,6 +18,7 @@
   "dependencies": {
     "@azure/cosmos": "^4.2.0",
     "@azure/storage-blob": "^12.29.1",
+    "@supabase/supabase-js": "^2.95.3",
     "azure": "^0.10.6",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
