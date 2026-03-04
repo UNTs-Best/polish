@@ -3,7 +3,7 @@ import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
 
-import { connectDB } from "./config/db.js";
+import { connectSupabase } from "./config/supabase.js";
 import authRoutes from "./routes/auth.routes.js";
 import oauthRoutes from "./routes/oauth.routes.js";
 import docRoutes from "./routes/document.routes.js";
@@ -40,6 +40,6 @@ app.use('/*', (req, res) => {
 
 app.use(errorHandler);
 
-connectDB();
+connectSupabase();
 
 export default app;

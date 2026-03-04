@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { checkJwt } from "../middleware/auth0.middleware.js"; // or Azure B2C middleware
+import { requireAuth } from "../middleware/auth.middleware.js";
 import {
   uploadDocument,
   getDocuments,
@@ -11,9 +11,9 @@ import {
 const router = express.Router();
 const upload = multer({ dest: "uploads/" });
 
-router.get("/", checkJwt, getDocuments);
-router.post("/", checkJwt, upload.single("file"), uploadDocument);
-router.put("/:id", checkJwt, renameDocument);
-router.delete("/:id", checkJwt, removeDocument);
+router.get("/", requireAuth, getDocuments);
+router.post("/", requireAuth, upload.single("file"), uploadDocument);
+router.put("/:id", requireAuth, renameDocument);
+router.delete("/:id", requireAuth, removeDocument);
 
 export default router;

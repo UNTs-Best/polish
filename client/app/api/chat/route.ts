@@ -1,13 +1,155 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+// Azure OpenAI Service configuration
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT // e.g., https://your-resource.openai.azure.com
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY
+const AZURE_OPENAI_DEPLOYMENT_NAME = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o"
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview"
+
+// Check if Azure OpenAI is configured
+const isAzureOpenAIConfigured = () => {
+  return Boolean(AZURE_OPENAI_ENDPOINT && AZURE_OPENAI_API_KEY && AZURE_OPENAI_DEPLOYMENT_NAME)
+}
+
+// Call Azure OpenAI Service
+async function callAzureOpenAI(
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number = 0.3,
+  maxTokens: number = 2000
+) {
+  if (!isAzureOpenAIConfigured()) {
+    throw new Error("Azure OpenAI Service is not configured. Please set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT_NAME environment variables.")
+  }
+
+  const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "api-key": AZURE_OPENAI_API_KEY!,
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Azure OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`)
+  }
+
+  const data = await response.json()
+  return data.choices[0]?.message?.content || ""
+}
+
+// Generate resume-specific suggestions
+async function generateResumeSuggestions(
+  message: string,
+  selectedText: string | undefined,
+  documentContent?: any
+): Promise<{ message: string; suggestedChanges: any }> {
+  const lowerMessage = message.toLowerCase()
+
+  // Create system prompt for resume improvement
+  const systemPrompt = `You are an expert resume writer and career coach specializing in ATS (Applicant Tracking System) optimization and professional resume writing. Your task is to help users improve their resumes by:
+
+1. Making content more concise and impactful
+2. Using strong action verbs and quantifiable metrics
+3. Following the XYZ format (Accomplished [X] as measured by [Y], by doing [Z])
+4. Improving clarity and professional tone
+5. Optimizing for ATS systems
+
+When providing suggestions, always return your response as JSON in this format:
+{
+  "message": "Brief explanation of what you're doing",
+  "suggestedChanges": {
+    "type": "change_type",
+    "description": "Description of changes",
+    "changes": [
+      {
+        "section": "experience|education|projects|skills",
+        "original": "original text",
+        "updated": "improved text"
+      }
+    ]
+  }
+}
+
+If you cannot provide specific changes, return:
+{
+  "message": "Helpful response message",
+  "suggestedChanges": null
+}`
+
+  // Build user prompt based on context
+  let userPrompt = `User request: ${message}\n\n`
+
+  if (selectedText) {
+    userPrompt += `Selected text to improve:\n"${selectedText}"\n\n`
+    userPrompt += `Please analyze this text and provide specific improvements. Focus on making it more impactful with metrics, stronger verbs, and clearer language.`
+  } else if (lowerMessage.includes("more concise") || lowerMessage.includes("make it concise") || lowerMessage.includes("shorten")) {
+    userPrompt += `The user wants to make their resume more concise. Please provide suggestions to remove redundant words and tighten the language while maintaining impact.`
+    if (documentContent?.experience) {
+      userPrompt += `\n\nHere are some example experience bullets:\n${JSON.stringify(documentContent.experience.slice(0, 2), null, 2)}`
+    }
+  } else if (lowerMessage.includes("xyz format") || (lowerMessage.includes("format") && lowerMessage.includes("experience"))) {
+    userPrompt += `The user wants to rewrite experience bullets in XYZ format (Accomplished [X] as measured by [Y], by doing [Z]). Please provide improved versions.`
+    if (documentContent?.experience) {
+      userPrompt += `\n\nHere are current experience bullets:\n${JSON.stringify(documentContent.experience[0]?.bullets || [], null, 2)}`
+    }
+  } else if (lowerMessage.includes("stronger verb") || lowerMessage.includes("action verb")) {
+    userPrompt += `The user wants to replace weak verbs with stronger action verbs. Please suggest improvements.`
+    if (documentContent?.experience) {
+      userPrompt += `\n\nHere are current experience bullets:\n${JSON.stringify(documentContent.experience[0]?.bullets || [], null, 2)}`
+    }
+  } else {
+    userPrompt += `Please provide helpful guidance on how to improve their resume.`
+  }
+
+  try {
+    const response = await callAzureOpenAI(systemPrompt, userPrompt, 0.3, 2000)
+    
+    // Try to parse JSON response
+    try {
+      const parsed = JSON.parse(response)
+      return {
+        message: parsed.message || response,
+        suggestedChanges: parsed.suggestedChanges || null,
+      }
+    } catch {
+      // If not JSON, return as message
+      return {
+        message: response,
+        suggestedChanges: null,
+      }
+    }
+  } catch (error) {
+    console.error("Azure OpenAI error:", error)
+    throw error
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { message, selectedText, conversationContext } = await request.json()
+    const { message, selectedText, conversationContext, documentContent } = await request.json()
 
-    let aiResponse = ""
-    let suggestedChanges = null
-
-    const lowerMessage = message.toLowerCase()
+    // Check if Azure OpenAI is configured
+    if (!isAzureOpenAIConfigured()) {
+      // Fallback to mock responses if not configured
+      console.warn("Azure OpenAI not configured, using fallback responses")
+      
+      let aiResponse = ""
+      let suggestedChanges = null
+      const lowerMessage = message.toLowerCase()
 
     if (lowerMessage.includes("fix resume") || lowerMessage.includes("improve resume")) {
       aiResponse = "Sure — which part would you like me to improve?"
@@ -233,15 +375,46 @@ Would you like me to rewrite this section with these improvements?`
       }
     }
 
-    return NextResponse.json({
-      message: aiResponse,
-      suggestions: selectedText
-        ? ["Make it more specific", "Add quantifiable results", "Use stronger action verbs"]
-        : [],
-      suggestedChanges,
-    })
+      return NextResponse.json({
+        message: aiResponse,
+        suggestions: selectedText
+          ? ["Make it more specific", "Add quantifiable results", "Use stronger action verbs"]
+          : [],
+        suggestedChanges,
+      })
+    }
+
+    // Azure OpenAI is configured - use real LLM
+    try {
+      const result = await generateResumeSuggestions(message, selectedText, documentContent)
+      
+      return NextResponse.json({
+        message: result.message,
+        suggestions: selectedText
+          ? ["Make it more specific", "Add quantifiable results", "Use stronger action verbs"]
+          : [],
+        suggestedChanges: result.suggestedChanges,
+      })
+    } catch (error) {
+      console.error("Azure OpenAI error:", error)
+      
+      // If Azure OpenAI fails, fall back to basic response
+      return NextResponse.json({
+        message: error instanceof Error 
+          ? `I'm having trouble connecting to the AI service. ${error.message}. Please check your Azure OpenAI configuration.`
+          : "I'm having trouble connecting to the AI service. Please check your Azure OpenAI configuration.",
+        suggestions: [],
+        suggestedChanges: null,
+      }, { status: 500 })
+    }
   } catch (error) {
     console.error("Chat API error:", error)
-    return NextResponse.json({ error: "Failed to process message" }, { status: 500 })
+    return NextResponse.json(
+      { 
+        error: "Failed to process message",
+        message: error instanceof Error ? error.message : "Unknown error occurred"
+      }, 
+      { status: 500 }
+    )
   }
 }
