@@ -5,6 +5,20 @@ import SessionService from "../services/session.service.js";
 const userService = new UserService();
 const sessionService = new SessionService();
 
+/** Password must be 8+ chars, at least one letter and one number (stronger than length-only). */
+function validatePasswordStrength(password) {
+  if (!password || password.length < 8) {
+    return { ok: false, message: "Password must be at least 8 characters long" };
+  }
+  if (!/[a-zA-Z]/.test(password)) {
+    return { ok: false, message: "Password must contain at least one letter" };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { ok: false, message: "Password must contain at least one number" };
+  }
+  return { ok: true };
+}
+
 export const register = async (req, res) => {
   try {
     const { email, password, firstName, lastName } = req.body;
@@ -19,9 +33,10 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "Invalid email format" });
     }
 
-    // Validate password strength
-    if (password.length < 8) {
-      return res.status(400).json({ message: "Password must be at least 8 characters long" });
+    // Validate password strength (length + letter + number)
+    const pwdCheck = validatePasswordStrength(password);
+    if (!pwdCheck.ok) {
+      return res.status(400).json({ message: pwdCheck.message });
     }
 
     const existing = await userService.getUserbyEmail(email);
@@ -220,8 +235,9 @@ export const changePassword = async (req, res) => {
       return res.status(400).json({ message: "Current and new password are required" });
     }
 
-    if (newPassword.length < 8) {
-      return res.status(400).json({ message: "New password must be at least 8 characters long" });
+    const pwdCheck = validatePasswordStrength(newPassword);
+    if (!pwdCheck.ok) {
+      return res.status(400).json({ message: pwdCheck.message });
     }
 
     const user = await userService.getUserbyID(userId);

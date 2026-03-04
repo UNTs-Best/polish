@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import helmet from "helmet";
 import dotenv from "dotenv";
 
 import { connectSupabase } from "./config/supabase.js";
@@ -17,6 +18,10 @@ dotenv.config();
 
 
 const app = express();
+
+// Security headers (XSS, clickjacking, MIME sniffing, etc.)
+app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled so Next/API can load; enable and tune for production
+
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
