@@ -6,7 +6,7 @@ import VersionService from "../services/version.service.js";
 export const getDocumentVersions = async (req, res) => {
   try {
     const { documentId } = req.params;
-    const ownerId = req.user?.sub || "anonymous";
+    const ownerId = req.auth?.id || "anonymous";
 
     const versionService = new VersionService();
     const versions = await versionService.getDocumentVersions(documentId);
@@ -27,7 +27,7 @@ export const getDocumentVersions = async (req, res) => {
 export const getVersion = async (req, res) => {
   try {
     const { versionId } = req.params;
-    const ownerId = req.user?.sub || "anonymous";
+    const ownerId = req.auth?.id || "anonymous";
 
     const versionService = new VersionService();
     const version = await versionService.getVersionById(versionId);
@@ -55,7 +55,7 @@ export const getVersionHistory = async (req, res) => {
   try {
     const { documentId } = req.params;
     const { limit } = req.query;
-    const ownerId = req.user?.sub || "anonymous";
+    const ownerId = req.auth?.id || "anonymous";
 
     const versionService = new VersionService();
 
@@ -79,7 +79,7 @@ export const getVersionHistory = async (req, res) => {
 export const restoreVersion = async (req, res) => {
   try {
     const { documentId, versionId } = req.params;
-    const ownerId = req.user?.sub || "anonymous";
+    const ownerId = req.auth?.id || "anonymous";
 
     const versionService = new VersionService();
 
@@ -106,7 +106,7 @@ export const restoreVersion = async (req, res) => {
 export const compareVersions = async (req, res) => {
   try {
     const { versionId1, versionId2 } = req.params;
-    const ownerId = req.user?.sub || "anonymous";
+    const ownerId = req.auth?.id || "anonymous";
 
     const versionService = new VersionService();
     const comparison = await versionService.compareVersions(versionId1, versionId2);

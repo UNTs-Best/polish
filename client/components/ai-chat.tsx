@@ -25,14 +25,26 @@ interface SuggestedChanges {
   }>
 }
 
+interface DocumentContent {
+  name?: string
+  title?: string
+  contact?: string
+  education?: Array<any>
+  experience?: Array<any>
+  projects?: Array<any>
+  leadership?: Array<any>
+  skills?: string
+}
+
 interface AIChatProps {
   selectedText?: string
   onSuggestionApply?: (changes: SuggestedChanges) => void
   onUndo?: () => void
   simulateError?: boolean
+  documentContent?: DocumentContent
 }
 
-export function AIChat({ selectedText, onSuggestionApply, onUndo, simulateError }: AIChatProps) {
+export function AIChat({ selectedText, onSuggestionApply, onUndo, simulateError, documentContent }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -120,6 +132,7 @@ export function AIChat({ selectedText, onSuggestionApply, onUndo, simulateError 
         body: JSON.stringify({
           message: messageToSend,
           selectedText: contextText || selectedText,
+          documentContent: documentContent,
         }),
       })
 
