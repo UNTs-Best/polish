@@ -1,13 +1,55 @@
 import { v4 as uuidv4 } from "uuid";
-import { getContainer } from "../config/db.js";
+import { getSupabaseAdmin, isSupabaseConfigured } from "../config/supabase.js";
 import VersionService from "./version.service.js";
 
 /**
- * Create metadata record after upload
+ * DB columns: id, user_id, title, content, document_type, status,
+ *             file_url, file_name, file_size, mime_type, metadata,
+ *             created_at, updated_at
+ */
+
+function modelToDb(data) {
+  const db = {};
+  if (data.id !== undefined) db.id = data.id;
+  if (data.ownerId !== undefined) db.user_id = data.ownerId;
+  if (data.title !== undefined) db.title = data.title;
+  if (data.content !== undefined) db.content = data.content;
+  if (data.blobName !== undefined) db.file_name = data.blobName;
+  if (data.blobUrl !== undefined) db.file_url = data.blobUrl;
+  if (data.size !== undefined) db.file_size = data.size;
+  if (data.mimeType !== undefined) db.mime_type = data.mimeType;
+  if (data.createdAt !== undefined) db.created_at = data.createdAt;
+  if (data.updatedAt !== undefined) db.updated_at = data.updatedAt;
+  return db;
+}
+
+function dbToModel(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    ownerId: row.user_id,
+    blobName: row.file_name,
+    blobUrl: row.file_url,
+    size: row.file_size,
+    mimeType: row.mime_type,
+    content: row.content,
+    documentType: row.document_type,
+    status: row.status,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Create metadata record after upload (standalone helper)
  */
 export async function createDocumentMeta(data) {
-  const container = await getContainer("Documents");
-  const item = {
+  if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+  const supabase = getSupabaseAdmin();
+
+  const item = modelToDb({
     id: uuidv4(),
     title: data.title,
     ownerId: data.ownerId,
@@ -15,40 +57,44 @@ export async function createDocumentMeta(data) {
     blobUrl: data.blobUrl,
     size: data.size || 0,
     mimeType: data.mimeType || null,
-    version: data.version || 1,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-  };
-  const { resource } = await container.items.create(item);
-  return resource;
-}
+  });
 
-/**
- * Fetch all docs for a specific user
- */
+  const { data: row, error } = await supabase
+    .from('documents')
+    .insert(item)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return dbToModel(row);
+}
 
 class DocumentService {
   constructor() {
     this.versionService = new VersionService();
   }
 
-  async getContainer() {
-    if (!this.container) {
-      this.container = await getContainer("Documents");
-    }
-    return this.container;
-  }
   async getUserDocuments(ownerId) {
-    if (!isCosmosConfigured()) throw new Error('Cosmos env not configured');
-    const container = await this.getContainer();
-    const query = { query: 'SELECT * FROM c WHERE c.ownerId = @ownerId ORDER BY c._ts DESC', parameters: [{ name: '@ownerId', value: ownerId }] };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources;
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('user_id', ownerId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map(dbToModel);
   }
+
   async createDocument(data) {
-    if (!isCosmosConfigured()) throw new Error('Cosmos env not configured');
-    const container = await this.getContainer();
-    const item = {
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const item = modelToDb({
       id: uuidv4(),
       title: data.title,
       ownerId: data.ownerId,
@@ -56,27 +102,35 @@ class DocumentService {
       blobUrl: data.blobUrl,
       size: data.size || 0,
       mimeType: data.mimeType || null,
-      version: data.version || 1,
+      content: data.content || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      content: data.content || '' // Add content field for editable documents
-    };
-    const { resource } = await container.items.create(item);
+    });
+
+    const { data: row, error } = await supabase
+      .from('documents')
+      .insert(item)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const doc = dbToModel(row);
 
     // Create initial version
-    await this.versionService.createVersion(resource.id, {
+    await this.versionService.createVersion(doc.id, {
       ownerId: data.ownerId,
       title: data.title,
       content: data.content || '',
-      changes: ['Document created'],
+      changes: 'Document created',
       createdBy: data.ownerId,
-      metadata: { action: 'create' }
     });
 
-    return resource;
+    return doc;
   }
+
   async updateDocument(id, updates, updatedBy = null) {
-    if (!isCosmosConfigured()) throw new Error('Cosmos env not configured');
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const existing = await this.getDocumentbyId(id);
     if (!existing) return null;
 
@@ -95,36 +149,56 @@ class DocumentService {
           ownerId: existing.ownerId,
           title: updates.title || existing.title,
           content: updates.content !== undefined ? updates.content : existing.content,
-          changes,
+          changes: changes.join('; '),
           createdBy: updatedBy || existing.ownerId,
-          metadata: { action: 'update' }
         });
       }
     }
 
-    const container = await this.getContainer();
-    const merged = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    const { resource } = await container.item(id, existing.ownerId).replace(merged);
-    return resource;
+    const supabase = getSupabaseAdmin();
+    const dbUpdates = modelToDb({ ...updates, updatedAt: new Date().toISOString() });
+
+    const { data: row, error } = await supabase
+      .from('documents')
+      .update(dbUpdates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return dbToModel(row);
   }
+
   async deleteDocument(id) {
-    if (!isCosmosConfigured()) throw new Error('Cosmos env not configured');
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
     const existing = await this.getDocumentbyId(id);
     if (!existing) return null;
 
-    // Delete all versions first
     await this.versionService.deleteDocumentVersions(id);
 
-    const container = await this.getContainer();
-    await container.item(id, existing.ownerId).delete();
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
     return true;
   }
+
   async getDocumentbyId(id) {
-    if (!isCosmosConfigured()) throw new Error('Cosmos env not configured');
-    const container = await this.getContainer();
-    const query = { query: 'SELECT TOP 1 * FROM c WHERE c.id = @id', parameters: [{ name: '@id', value: id }] };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources[0] || null;
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data: row, error } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error && error.code === 'PGRST116') return null;
+    if (error) throw error;
+    return dbToModel(row);
   }
 }
 

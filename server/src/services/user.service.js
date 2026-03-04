@@ -1,57 +1,112 @@
-import { getContainer, isCosmosConfigured } from '../config/db.js';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
 import UserModel from '../models/user.model.js';
 
+/**
+ * DB columns: id, email, password_hash, first_name, last_name, display_name,
+ *             avatar_url, auth_provider, auth_provider_id, email_verified,
+ *             last_login, created_at, updated_at
+ */
 class UserService {
     constructor() {
-        this.container = null;
+        this.supabase = null;
     }
 
-    async getContainer() {
-        if (!this.container) {
-            this.container = await getContainer('Users');
+    getSupabase() {
+        if (!this.supabase) {
+            this.supabase = getSupabaseAdmin();
         }
-        return this.container;
+        return this.supabase;
+    }
+
+    modelToDb(user) {
+        const db = {};
+        if (user.id !== undefined) db.id = user.id;
+        if (user.email !== undefined) db.email = user.email;
+        if (user.password !== undefined) db.password_hash = user.password;
+        if (user.firstName !== undefined) db.first_name = user.firstName;
+        if (user.lastName !== undefined) db.last_name = user.lastName;
+        if (user.avatar !== undefined) db.avatar_url = user.avatar;
+        if (user.provider !== undefined) db.auth_provider = user.provider;
+        if (user.providerId !== undefined) db.auth_provider_id = user.providerId;
+        if (user.emailVerified !== undefined) db.email_verified = user.emailVerified;
+        if (user.createdAt !== undefined) db.created_at = user.createdAt;
+        if (user.updatedAt !== undefined) db.updated_at = user.updatedAt;
+        if (user.lastLoginAt !== undefined) db.last_login = user.lastLoginAt;
+        if (user.firstName || user.lastName) {
+            db.display_name = [user.firstName, user.lastName].filter(Boolean).join(' ');
+        }
+        return db;
+    }
+
+    dbToModel(dbUser) {
+        if (!dbUser) return null;
+        return new UserModel({
+            id: dbUser.id,
+            email: dbUser.email,
+            password: dbUser.password_hash,
+            firstName: dbUser.first_name,
+            lastName: dbUser.last_name,
+            avatar: dbUser.avatar_url,
+            provider: dbUser.auth_provider,
+            providerId: dbUser.auth_provider_id,
+            emailVerified: dbUser.email_verified,
+            isActive: true,
+            createdAt: dbUser.created_at,
+            updatedAt: dbUser.updated_at,
+            lastLoginAt: dbUser.last_login
+        });
     }
 
     async getUserbyEmail(email) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
-        const query = { query: 'SELECT TOP 1 * FROM c WHERE c.email = @email', parameters: [{ name: '@email', value: email }] };
-        const { resources } = await container.items.query(query).fetchAll();
-        return resources[0] ? new UserModel(resources[0]) : null;
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        return this.dbToModel(data);
     }
 
     async getUserByProviderId(provider, providerId) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
-        const query = {
-            query: 'SELECT TOP 1 * FROM c WHERE c.provider = @provider AND c.providerId = @providerId',
-            parameters: [
-                { name: '@provider', value: provider },
-                { name: '@providerId', value: providerId }
-            ]
-        };
-        const { resources } = await container.items.query(query).fetchAll();
-        return resources[0] ? new UserModel(resources[0]) : null;
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_provider', provider)
+            .eq('auth_provider_id', providerId)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        return this.dbToModel(data);
     }
 
     async createUser(data) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
         const user = new UserModel(data);
-        const { resource } = await container.items.create(user.toJSON());
-        return new UserModel(resource);
+        const dbUser = this.modelToDb(user);
+
+        const { data: created, error } = await supabase
+            .from('users')
+            .insert(dbUser)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return this.dbToModel(created);
     }
 
     async createOAuthUser(provider, providerData) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
 
-        // Extract user info based on provider
         let userData = {
             provider,
             providerId: providerData.id,
-            providerData,
-            emailVerified: true // OAuth users are pre-verified
+            emailVerified: true
         };
 
         switch (provider) {
@@ -69,7 +124,6 @@ class UserService {
                 break;
             case 'apple':
                 userData.email = providerData.email;
-                // Apple doesn't provide name/avatar in the same way
                 userData.firstName = providerData.name?.firstName;
                 userData.lastName = providerData.name?.lastName;
                 break;
@@ -77,14 +131,11 @@ class UserService {
                 throw new Error(`Unsupported OAuth provider: ${provider}`);
         }
 
-        // Check if user already exists
         let existingUser = await this.getUserbyEmail(userData.email);
         if (existingUser) {
-            // Update existing user with OAuth info if not already set
             if (!existingUser.providerId) {
                 existingUser.provider = provider;
                 existingUser.providerId = userData.providerId;
-                existingUser.providerData = userData.providerData;
                 if (!existingUser.avatar && userData.avatar) {
                     existingUser.avatar = userData.avatar;
                 }
@@ -97,61 +148,65 @@ class UserService {
     }
 
     async updateUser(id, updates) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
         const existing = await this.getUserbyID(id);
         if (!existing) return null;
 
         const updatedUser = new UserModel({ ...existing.toJSON(), ...updates });
-        const { resource } = await container.item(id, existing.email).replace(updatedUser.toJSON());
-        return new UserModel(resource);
+        updatedUser.updatedAt = new Date().toISOString();
+        const dbUser = this.modelToDb(updatedUser);
+
+        const { data: updated, error } = await supabase
+            .from('users')
+            .update(dbUser)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return this.dbToModel(updated);
     }
 
     async deleteUser(id) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
         const existing = await this.getUserbyID(id);
         if (!existing) return null;
-        await container.item(id, existing.email).delete();
+
+        const { error } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
         return true;
     }
 
     async getAllUsers(limit = 100, offset = 0) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
-        const query = {
-            query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET @offset LIMIT @limit',
-            parameters: [
-                { name: '@offset', value: offset },
-                { name: '@limit', value: limit }
-            ]
-        };
-        const { resources } = await container.items.query(query).fetchAll();
-        return resources.map(user => new UserModel(user));
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+        return data.map(user => this.dbToModel(user));
     }
 
     async getUserbyID(id) {
-        if (!isCosmosConfigured()) throw new Error('CosmosDB not configured');
-        const container = await this.getContainer();
-        const query = { query: 'SELECT TOP 1 * FROM c WHERE c.id = @id', parameters: [{ name: '@id', value: id }] };
-        const { resources } = await container.items.query(query).fetchAll();
-        return resources[0] ? new UserModel(resources[0]) : null;
-    }
+        if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+        const supabase = this.getSupabase();
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-    async updateRefreshToken(userId, refreshToken, expiresAt) {
-        const user = await this.getUserbyID(userId);
-        if (!user) return null;
-
-        user.setRefreshToken(refreshToken);
-        return await this.updateUser(userId, user);
-    }
-
-    async clearRefreshToken(userId) {
-        const user = await this.getUserbyID(userId);
-        if (!user) return null;
-
-        user.clearRefreshToken();
-        return await this.updateUser(userId, user);
+        if (error && error.code !== 'PGRST116') throw error;
+        return this.dbToModel(data);
     }
 
     async findOrCreateUser(email, userData = {}) {
@@ -166,3 +221,5 @@ class UserService {
         return user;
     }
 }
+
+export default UserService;

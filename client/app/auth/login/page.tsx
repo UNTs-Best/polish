@@ -5,16 +5,48 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement login logic
-    console.log("Login:", { email, password })
+    setError("")
+    setLoading(true)
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.message || "Login failed")
+        return
+      }
+
+      // Store tokens
+      localStorage.setItem("accessToken", data.accessToken)
+      localStorage.setItem("refreshToken", data.refreshToken)
+      localStorage.setItem("user", JSON.stringify(data.user))
+
+      router.push("/editor")
+    } catch {
+      setError("Unable to connect to server")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -30,7 +62,7 @@ export default function LoginPage() {
       }}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-transparent to-slate-100/40"></div>
-      
+
       <div className="relative z-10 w-full max-w-md mx-auto px-4">
         <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/50 p-8">
           <Link
@@ -47,6 +79,12 @@ export default function LoginPage() {
             </h1>
             <p className="text-slate-600">Welcome back to Polish</p>
           </div>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
@@ -85,9 +123,10 @@ export default function LoginPage() {
 
             <Button
               type="submit"
+              disabled={loading}
               className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg"
             >
-              Sign In
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 

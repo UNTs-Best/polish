@@ -5,18 +5,60 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+
 export default function SignupPage() {
+  const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement signup logic
-    console.log("Signup:", { name, email, password })
+    setError("")
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match")
+      return
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters")
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const nameParts = name.trim().split(" ")
+      const firstName = nameParts[0] || ""
+      const lastName = nameParts.slice(1).join(" ") || ""
+
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, firstName, lastName }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.message || "Registration failed")
+        return
+      }
+
+      router.push("/auth/login?registered=true")
+    } catch {
+      setError("Unable to connect to server")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -32,7 +74,7 @@ export default function SignupPage() {
       }}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-transparent to-slate-100/40"></div>
-      
+
       <div className="relative z-10 w-full max-w-md mx-auto px-4">
         <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/50 p-8">
           <Link
@@ -49,6 +91,12 @@ export default function SignupPage() {
             </h1>
             <p className="text-slate-600">Get started with Polish today</p>
           </div>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
@@ -105,9 +153,10 @@ export default function SignupPage() {
 
             <Button
               type="submit"
+              disabled={loading}
               className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg"
             >
-              Create Account
+              {loading ? "Creating account..." : "Create Account"}
             </Button>
           </form>
 

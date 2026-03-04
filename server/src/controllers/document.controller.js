@@ -1,36 +1,33 @@
 import fs from "fs";
-import { uploadFileToBlob } from "../utils/azureBlob.js";
-import {
-  createDocumentMeta,
-  getUserDocuments,
-  updateDocument,
-  deleteDocument,
-} from "../services/document.service.js";
+import { uploadFileToSupabase } from "../utils/supabaseStorage.js";
+import DocumentService from "../services/document.service.js";
+
+const documentService = new DocumentService();
 
 /**
- * Upload a file -> Azure Blob -> save metadata in Mongo
+ * Upload a file -> Supabase Storage -> save metadata in Supabase
  */
 export const uploadDocument = async (req, res) => {
   try {
     const { file } = req;
     const { title } = req.body;
-    const ownerId = req.user?.sub || "anonymous"; // from Auth middleware
+    const ownerId = req.auth?.id || "anonymous";
 
     if (!file) return res.status(400).json({ message: "No file uploaded" });
 
-    const blobResult = await uploadFileToBlob(file.path, file.originalname);
+    const storageResult = await uploadFileToSupabase(file.path, file.originalname, ownerId);
 
-    const docMeta = await createDocumentMeta({
+    const doc = await documentService.createDocument({
       title: title || file.originalname,
       ownerId,
-      blobName: blobResult.blobName,
-      blobUrl: blobResult.url,
+      blobName: storageResult.fileName,
+      blobUrl: storageResult.url,
       size: file.size,
       mimeType: file.mimetype,
     });
 
     fs.unlinkSync(file.path); // cleanup temp file
-    res.status(201).json(docMeta);
+    res.status(201).json(doc);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
@@ -42,8 +39,8 @@ export const uploadDocument = async (req, res) => {
  */
 export const getDocuments = async (req, res) => {
   try {
-    const ownerId = req.user?.sub || "anonymous";
-    const docs = await getUserDocuments(ownerId);
+    const ownerId = req.auth?.id || "anonymous";
+    const docs = await documentService.getUserDocuments(ownerId);
     res.json(docs);
   } catch (err) {
     console.error(err);
@@ -58,7 +55,8 @@ export const renameDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    const updated = await updateDocument(id, updates);
+    const updatedBy = req.auth?.id || null;
+    const updated = await documentService.updateDocument(id, updates, updatedBy);
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -72,7 +70,7 @@ export const renameDocument = async (req, res) => {
 export const removeDocument = async (req, res) => {
   try {
     const { id } = req.params;
-    await deleteDocument(id);
+    await documentService.deleteDocument(id);
     res.status(204).end();
   } catch (err) {
     console.error(err);

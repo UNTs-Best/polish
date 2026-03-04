@@ -3,7 +3,7 @@ import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
 
-import { connectDB } from "./config/db.js";
+import { connectSupabase } from "./config/supabase.js";
 import authRoutes from "./routes/auth.routes.js";
 import oauthRoutes from "./routes/oauth.routes.js";
 import docRoutes from "./routes/document.routes.js";
@@ -34,12 +34,12 @@ app.use("/api/health", (req, res) => {
 app.use("/version", versionRoutes);
 
 
-app.use('/*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({ message: "Endpoint not found" });
 });
 
 app.use(errorHandler);
 
-connectDB();
+connectSupabase();
 
 export default app;

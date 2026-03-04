@@ -1,5 +1,5 @@
 import express from "express";
-import { checkJwt } from "../middleware/auth0.middleware.js";
+import { requireAuth } from "../middleware/auth.middleware.js";
 import {
   getDocumentVersions,
   getVersion,
@@ -11,7 +11,7 @@ import {
 const router = express.Router();
 
 // All version routes require authentication
-router.use(checkJwt);
+router.use(requireAuth);
 
 // Get all versions for a document
 router.get("/document/:documentId", getDocumentVersions);

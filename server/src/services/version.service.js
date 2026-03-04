@@ -1,149 +1,135 @@
 import { v4 as uuidv4 } from "uuid";
-import { getContainer } from "../config/db.js";
-import VersionModel from "../models/version.model.js";
+import { getSupabaseAdmin, isSupabaseConfigured } from "../config/supabase.js";
 
 /**
- * Service for managing document versions and history
+ * DB columns: id, document_id, version_number, content, change_summary,
+ *             created_by, created_at
  */
+
+function dbToModel(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    version: row.version_number,
+    content: row.content,
+    changes: row.change_summary ? [row.change_summary] : [],
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  };
+}
+
 class VersionService {
-  constructor() {
-    this.versionsContainer = null;
-    this.documentsContainer = null;
-  }
-
-  async getVersionsContainer() {
-    if (!this.versionsContainer) {
-      this.versionsContainer = await getContainer("Versions");
-    }
-    return this.versionsContainer;
-  }
-
-  async getDocumentsContainer() {
-    if (!this.documentsContainer) {
-      this.documentsContainer = await getContainer("Documents");
-    }
-    return this.documentsContainer;
-  }
-
-  /**
-   * Create a new version for a document
-   */
   async createVersion(documentId, versionData) {
-    const container = await this.getVersionsContainer();
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
 
-    // Get the latest version number for this document
     const latestVersion = await this.getLatestVersion(documentId);
     const newVersionNumber = latestVersion ? latestVersion.version + 1 : 1;
 
-    const version = new VersionModel({
-      ...versionData,
-      documentId,
-      version: newVersionNumber,
-      previousVersion: latestVersion ? latestVersion.id : null,
-      createdAt: new Date().toISOString(),
-    });
-
-    const { resource } = await container.items.create(version.toJSON());
-    return resource;
-  }
-
-  /**
-   * Get all versions for a document
-   */
-  async getDocumentVersions(documentId) {
-    const container = await this.getVersionsContainer();
-    const query = {
-      query: 'SELECT * FROM c WHERE c.documentId = @documentId ORDER BY c.version DESC',
-      parameters: [{ name: '@documentId', value: documentId }]
-    };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources;
-  }
-
-  /**
-   * Get a specific version by ID
-   */
-  async getVersionById(versionId) {
-    const container = await this.getVersionsContainer();
-    const query = {
-      query: 'SELECT * FROM c WHERE c.id = @id',
-      parameters: [{ name: '@id', value: versionId }]
-    };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources[0] || null;
-  }
-
-  /**
-   * Get the latest version for a document
-   */
-  async getLatestVersion(documentId) {
-    const container = await this.getVersionsContainer();
-    const query = {
-      query: 'SELECT TOP 1 * FROM c WHERE c.documentId = @documentId ORDER BY c.version DESC',
-      parameters: [{ name: '@documentId', value: documentId }]
-    };
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources[0] || null;
-  }
-
-  /**
-   * Restore a document to a specific version
-   */
-  async restoreVersion(documentId, versionId, restoredBy) {
-    const version = await this.getVersionById(versionId);
-    if (!version) {
-      throw new Error('Version not found');
+    // changes can be a string or array — normalize to string for change_summary
+    let changeSummary = '';
+    if (Array.isArray(versionData.changes)) {
+      changeSummary = versionData.changes.join('; ');
+    } else if (typeof versionData.changes === 'string') {
+      changeSummary = versionData.changes;
     }
 
+    const { data: row, error } = await supabase
+      .from('versions')
+      .insert({
+        id: uuidv4(),
+        document_id: documentId,
+        version_number: newVersionNumber,
+        content: versionData.content || '',
+        change_summary: changeSummary,
+        created_by: versionData.createdBy || versionData.ownerId || null,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return dbToModel(row);
+  }
+
+  async getDocumentVersions(documentId) {
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from('versions')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('version_number', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map(dbToModel);
+  }
+
+  async getVersionById(versionId) {
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data: row, error } = await supabase
+      .from('versions')
+      .select('*')
+      .eq('id', versionId)
+      .single();
+
+    if (error && error.code === 'PGRST116') return null;
+    if (error) throw error;
+    return dbToModel(row);
+  }
+
+  async getLatestVersion(documentId) {
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from('versions')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('version_number', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return data && data.length > 0 ? dbToModel(data[0]) : null;
+  }
+
+  async restoreVersion(documentId, versionId, restoredBy) {
+    const version = await this.getVersionById(versionId);
+    if (!version) throw new Error('Version not found');
     if (version.documentId !== documentId) {
       throw new Error('Version does not belong to the specified document');
     }
 
-    // Create a new version with the restored content
-    const restoredVersion = await this.createVersion(documentId, {
-      ownerId: version.ownerId,
-      title: version.title,
+    return await this.createVersion(documentId, {
       content: version.content,
-      changes: [`Restored to version ${version.version}`],
+      changes: `Restored to version ${version.version}`,
       createdBy: restoredBy,
-      metadata: {
-        ...version.metadata,
-        restoredFrom: versionId,
-        action: 'restore'
-      }
     });
-
-    return restoredVersion;
   }
 
-  /**
-   * Delete all versions of a document
-   */
   async deleteDocumentVersions(documentId) {
-    const container = await this.getVersionsContainer();
-    const versions = await this.getDocumentVersions(documentId);
+    if (!isSupabaseConfigured()) throw new Error('Supabase not configured');
+    const supabase = getSupabaseAdmin();
 
-    const deletePromises = versions.map(version =>
-      container.item(version.id, version.ownerId).delete()
-    );
+    const { error } = await supabase
+      .from('versions')
+      .delete()
+      .eq('document_id', documentId);
 
-    await Promise.all(deletePromises);
-    return versions.length;
+    if (error) throw error;
   }
 
-  /**
-   * Compare two versions
-   */
   async compareVersions(versionId1, versionId2) {
     const [version1, version2] = await Promise.all([
       this.getVersionById(versionId1),
       this.getVersionById(versionId2)
     ]);
 
-    if (!version1 || !version2) {
-      throw new Error('One or both versions not found');
-    }
-
+    if (!version1 || !version2) throw new Error('One or both versions not found');
     if (version1.documentId !== version2.documentId) {
       throw new Error('Versions belong to different documents');
     }
@@ -153,7 +139,6 @@ class VersionService {
       version1: {
         id: version1.id,
         version: version1.version,
-        title: version1.title,
         content: version1.content,
         createdAt: version1.createdAt,
         createdBy: version1.createdBy
@@ -161,7 +146,6 @@ class VersionService {
       version2: {
         id: version2.id,
         version: version2.version,
-        title: version2.title,
         content: version2.content,
         createdAt: version2.createdAt,
         createdBy: version2.createdBy
@@ -169,16 +153,11 @@ class VersionService {
     };
   }
 
-  /**
-   * Get version history summary
-   */
   async getVersionHistory(documentId, limit = 50) {
     const versions = await this.getDocumentVersions(documentId);
-
     return versions.slice(0, limit).map(version => ({
       id: version.id,
       version: version.version,
-      title: version.title,
       createdAt: version.createdAt,
       createdBy: version.createdBy,
       changes: version.changes,
