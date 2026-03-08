@@ -205,14 +205,71 @@ export async function parseDocument(file: File): Promise<ParsedDocument> {
   }
 }
 
+// Date pattern for extracting periods from lines
+const DATE_PATTERN =
+  /(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*\d{4}|(?:Spring|Summer|Fall|Winter)\s*\d{4}|\d{1,2}\/\d{4}|\d{4})\s*(?:[-–—]+\s*(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*\d{4}|Present|Current|Now|(?:Spring|Summer|Fall|Winter)\s*\d{4}|\d{1,2}\/\d{4}|\d{4}))?/i
+
+// Location pattern (City, ST or City, State)
+const LOCATION_PATTERN = /([A-Z][a-zA-Z\s]+,\s*[A-Z]{2})\b/
+
+function isBulletLine(line: string): boolean {
+  return /^[•\-*▪▸►◦‣⁃]\s*/.test(line) || /^\d+[.)]\s/.test(line)
+}
+
+function stripBullet(line: string): string {
+  return line.replace(/^[•\-*▪▸►◦‣⁃]\s*/, "").replace(/^\d+[.)]\s*/, "")
+}
+
+function extractDateFromLine(line: string): { period: string; remainder: string } {
+  const match = line.match(DATE_PATTERN)
+  if (match) {
+    const period = match[0].trim()
+    const remainder = line.replace(match[0], "").replace(/\s*[|,]\s*$/, "").replace(/^\s*[|,]\s*/, "").trim()
+    return { period, remainder }
+  }
+  return { period: "", remainder: line }
+}
+
+function extractLocationFromLine(line: string): { location: string; remainder: string } {
+  const match = line.match(LOCATION_PATTERN)
+  if (match) {
+    const location = match[1].trim()
+    const remainder = line.replace(match[0], "").replace(/\s*[|,]\s*$/, "").replace(/^\s*[|,]\s*/, "").trim()
+    return { location, remainder }
+  }
+  return { location: "", remainder: line }
+}
+
+// Detect if a line looks like a new entry header (not a bullet, has a date or location, or is a title-like line)
+function isEntryHeader(line: string): boolean {
+  if (isBulletLine(line)) return false
+  // Contains a date pattern — strong signal
+  if (DATE_PATTERN.test(line)) return true
+  // Contains " at " or " - " separating role/company — strong signal
+  if (/\s+at\s+/i.test(line) || /\s+[-–—]\s+/.test(line)) return true
+  // Contains a pipe separator with location-like content
+  if (/\|/.test(line) && LOCATION_PATTERN.test(line)) return true
+  return false
+}
+
 // Convert raw text to structured document content
 export function parseResumeText(text: string): any {
   const lines = text.split("\n").filter((line) => line.trim())
 
   const name = lines[0]?.trim() || "Your Name"
 
-  const contactLine = lines.find((line) => line.includes("@") || line.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/))
-  const contact = contactLine?.trim() || ""
+  // Look for contact info in the first few lines (email, phone, LinkedIn, etc.)
+  const contactLines: string[] = []
+  for (let i = 1; i < Math.min(lines.length, 5); i++) {
+    const line = lines[i]?.trim() || ""
+    const hasEmail = line.includes("@")
+    const hasPhone = /\d{3}[-.\s()]*\d{3}[-.\s]*\d{4}/.test(line)
+    const hasLink = /linkedin|github|portfolio|http/i.test(line)
+    if (hasEmail || hasPhone || hasLink) {
+      contactLines.push(line)
+    }
+  }
+  const contact = contactLines.join(" | ")
 
   const sections: Record<string, string[]> = {}
   let currentSection = "header"
@@ -221,24 +278,46 @@ export function parseResumeText(text: string): any {
     "education",
     "experience",
     "work experience",
+    "professional experience",
     "employment",
     "projects",
+    "personal projects",
     "skills",
     "technical skills",
+    "core competencies",
     "certifications",
     "leadership",
+    "leadership & activities",
     "activities",
+    "extracurricular",
+    "volunteer",
     "summary",
+    "professional summary",
     "objective",
     "awards",
+    "honors",
+    "publications",
   ]
 
   for (const line of lines.slice(1)) {
     const lowerLine = line.toLowerCase().trim()
-    const matchedSection = sectionKeywords.find((kw) => lowerLine === kw || lowerLine.startsWith(kw + " "))
+    // Skip contact lines already captured
+    if (contactLines.includes(line.trim())) continue
+
+    const matchedSection = sectionKeywords.find(
+      (kw) => lowerLine === kw || lowerLine === kw + ":" || lowerLine.replace(/[:\s]+$/, "") === kw
+    )
 
     if (matchedSection) {
-      currentSection = matchedSection
+      // Normalize to base section name
+      const normalized = matchedSection
+        .replace("work ", "")
+        .replace("professional ", "")
+        .replace("personal ", "")
+        .replace("core ", "")
+        .replace("technical ", "")
+        .replace(" & activities", "")
+      currentSection = normalized === "competencies" ? "skills" : normalized
       sections[currentSection] = []
     } else if (line.trim()) {
       if (!sections[currentSection]) {
@@ -248,69 +327,128 @@ export function parseResumeText(text: string): any {
     }
   }
 
-  // Build education array
-  const education = []
+  // Build education array — group lines into entries using date/location detection
+  const education: Array<{ school: string; degree: string; location: string; period: string }> = []
   if (sections.education?.length) {
-    for (let i = 0; i < sections.education.length; i += 2) {
-      education.push({
-        school: sections.education[i] || "",
-        degree: sections.education[i + 1] || "",
-        location: "",
-        period: "",
-      })
-    }
-  }
+    let currentEdu: { school: string; degree: string; location: string; period: string } | null = null
 
-  // Build experience array
-  const experience = []
-  const expSection = sections.experience || sections["work experience"] || sections.employment || []
-  if (expSection.length) {
-    let currentExp: any = null
-    for (const line of expSection) {
-      if (line.includes(" at ") || line.includes(" - ") || line.match(/^[A-Z]/)) {
-        if (currentExp) {
-          experience.push(currentExp)
+    for (const line of sections.education) {
+      if (isBulletLine(line)) {
+        // Skip bullet lines in education (e.g., coursework, GPA details) — append to degree
+        if (currentEdu) {
+          currentEdu.degree += currentEdu.degree ? "; " + stripBullet(line) : stripBullet(line)
         }
-        currentExp = {
-          role: line,
-          company: "",
-          location: "",
-          period: "",
-          bullets: [],
+        continue
+      }
+
+      const { period, remainder: afterDate } = extractDateFromLine(line)
+      const { location, remainder: afterLocation } = extractLocationFromLine(afterDate)
+
+      if (period || location) {
+        // This line has metadata — decide if it's a new entry or sub-line
+        if (!currentEdu || (period && currentEdu.period && currentEdu.degree)) {
+          // New education entry
+          if (currentEdu) education.push(currentEdu)
+          currentEdu = { school: afterLocation || afterDate, degree: "", location, period }
+        } else {
+          // Sub-line (degree line with date/location)
+          if (!currentEdu.period) currentEdu.period = period
+          if (!currentEdu.location) currentEdu.location = location
+          if (afterLocation) currentEdu.degree = afterLocation
         }
-      } else if (currentExp && (line.startsWith("•") || line.startsWith("-") || line.startsWith("*"))) {
-        currentExp.bullets.push(line.replace(/^[•\-*]\s*/, ""))
-      } else if (currentExp) {
-        currentExp.bullets.push(line)
+      } else if (!currentEdu) {
+        // First line without metadata — treat as school name
+        currentEdu = { school: line, degree: "", location: "", period: "" }
+      } else if (!currentEdu.degree) {
+        currentEdu.degree = line
+      } else {
+        // Additional line — likely a new entry
+        education.push(currentEdu)
+        currentEdu = { school: line, degree: "", location: "", period: "" }
       }
     }
-    if (currentExp) {
-      experience.push(currentExp)
+    if (currentEdu) education.push(currentEdu)
+  }
+
+  // Build experience array — use smarter entry detection
+  const experience: Array<{ role: string; company: string; location: string; period: string; bullets: string[] }> = []
+  const expSection = sections.experience || sections["work experience"] || sections.employment || []
+  if (expSection.length) {
+    let currentExp: { role: string; company: string; location: string; period: string; bullets: string[] } | null = null
+
+    for (const line of expSection) {
+      if (isBulletLine(line)) {
+        if (currentExp) {
+          currentExp.bullets.push(stripBullet(line))
+        }
+      } else if (isEntryHeader(line)) {
+        if (currentExp) experience.push(currentExp)
+
+        const { period, remainder: afterDate } = extractDateFromLine(line)
+        const { location, remainder: afterLocation } = extractLocationFromLine(afterDate)
+
+        // Try to split role and company
+        let role = afterLocation
+        let company = ""
+        const separators = [/ at /i, /\s*[|]\s*/, /\s*[-–—]\s+/]
+        for (const sep of separators) {
+          const parts = role.split(sep)
+          if (parts.length >= 2) {
+            role = parts[0].trim()
+            company = parts.slice(1).join(" ").trim()
+            break
+          }
+        }
+
+        currentExp = { role, company, location, period, bullets: [] }
+      } else if (currentExp && !currentExp.company && currentExp.bullets.length === 0) {
+        // Second non-bullet line after header — likely company/subtitle
+        const { location, remainder } = extractLocationFromLine(line)
+        const { period, remainder: afterDate } = extractDateFromLine(remainder)
+        if (!currentExp.location && location) currentExp.location = location
+        if (!currentExp.period && period) currentExp.period = period
+        currentExp.company = afterDate || remainder
+      } else if (currentExp) {
+        // Non-bullet, non-header line — treat as a bullet without marker
+        currentExp.bullets.push(line)
+      } else {
+        // First line with no date — start an entry anyway
+        currentExp = { role: line, company: "", location: "", period: "", bullets: [] }
+      }
     }
+    if (currentExp) experience.push(currentExp)
   }
 
   // Build projects array
-  const projects = []
+  const projects: Array<{ name: string; tech: string; period: string; bullets: string[] }> = []
   if (sections.projects?.length) {
-    let currentProject: any = null
+    let currentProject: { name: string; tech: string; period: string; bullets: string[] } | null = null
+
     for (const line of sections.projects) {
-      if (!line.startsWith("•") && !line.startsWith("-") && !line.startsWith("*")) {
+      if (isBulletLine(line)) {
         if (currentProject) {
-          projects.push(currentProject)
+          currentProject.bullets.push(stripBullet(line))
         }
-        currentProject = {
-          name: line,
-          tech: "",
-          period: "",
-          bullets: [],
+      } else if (isEntryHeader(line) || (!currentProject && !isBulletLine(line))) {
+        if (currentProject) projects.push(currentProject)
+
+        const { period, remainder: afterDate } = extractDateFromLine(line)
+        let name = afterDate
+        let tech = ""
+
+        // Try to extract tech stack after pipe separator
+        const pipeIdx = name.indexOf("|")
+        if (pipeIdx > 0) {
+          tech = name.slice(pipeIdx + 1).trim()
+          name = name.slice(0, pipeIdx).trim()
         }
+
+        currentProject = { name, tech, period, bullets: [] }
       } else if (currentProject) {
-        currentProject.bullets.push(line.replace(/^[•\-*]\s*/, ""))
+        currentProject.bullets.push(line)
       }
     }
-    if (currentProject) {
-      projects.push(currentProject)
-    }
+    if (currentProject) projects.push(currentProject)
   }
 
   // Extract skills
@@ -318,29 +456,44 @@ export function parseResumeText(text: string): any {
   const skills = skillsSection.join(" | ")
 
   // Build leadership/activities array
-  const leadership = []
-  const leadershipSection = sections.leadership || sections.activities || []
+  const leadership: Array<{ role: string; organization: string; location: string; period: string; bullets: string[] }> = []
+  const leadershipSection = sections.leadership || sections.activities || sections.extracurricular || sections.volunteer || []
   if (leadershipSection.length) {
-    let currentItem: any = null
+    let currentItem: { role: string; organization: string; location: string; period: string; bullets: string[] } | null = null
+
     for (const line of leadershipSection) {
-      if (!line.startsWith("•") && !line.startsWith("-") && !line.startsWith("*")) {
+      if (isBulletLine(line)) {
         if (currentItem) {
-          leadership.push(currentItem)
+          currentItem.bullets.push(stripBullet(line))
         }
-        currentItem = {
-          role: line,
-          organization: "",
-          location: "",
-          period: "",
-          bullets: [],
+      } else if (isEntryHeader(line) || !currentItem) {
+        if (currentItem) leadership.push(currentItem)
+
+        const { period, remainder: afterDate } = extractDateFromLine(line)
+        const { location, remainder: afterLocation } = extractLocationFromLine(afterDate)
+
+        let role = afterLocation
+        let organization = ""
+        const separators = [/ at /i, /\s*[|]\s*/, /\s*[-–—]\s+/]
+        for (const sep of separators) {
+          const parts = role.split(sep)
+          if (parts.length >= 2) {
+            role = parts[0].trim()
+            organization = parts.slice(1).join(" ").trim()
+            break
+          }
         }
+
+        currentItem = { role, organization, location, period, bullets: [] }
+      } else if (currentItem && !currentItem.organization && currentItem.bullets.length === 0) {
+        const { location, remainder } = extractLocationFromLine(line)
+        if (!currentItem.location && location) currentItem.location = location
+        currentItem.organization = remainder
       } else if (currentItem) {
-        currentItem.bullets.push(line.replace(/^[•\-*]\s*/, ""))
+        currentItem.bullets.push(line)
       }
     }
-    if (currentItem) {
-      leadership.push(currentItem)
-    }
+    if (currentItem) leadership.push(currentItem)
   }
 
   return {
