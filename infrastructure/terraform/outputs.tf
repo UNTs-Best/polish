@@ -1,3 +1,8 @@
+output "environment" {
+  description = "Deployed environment name"
+  value       = var.environment
+}
+
 output "resource_group_name" {
   description = "Name of the resource group"
   value       = module.resource_group.name
