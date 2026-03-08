@@ -14,15 +14,20 @@ variable "location" {
 }
 
 variable "enable_free_tier" {
-  description = "Enable CosmosDB free tier"
+  description = "Enable CosmosDB free tier (one per subscription)"
   type        = bool
   default     = false
 }
 
 variable "throughput_mode" {
-  description = "Throughput mode: 'fixed' or 'autoscale'"
+  description = "Throughput mode: fixed or autoscale"
   type        = string
   default     = "fixed"
+
+  validation {
+    condition     = contains(["fixed", "autoscale"], var.throughput_mode)
+    error_message = "throughput_mode must be 'fixed' or 'autoscale'."
+  }
 }
 
 variable "throughput" {
@@ -32,11 +37,12 @@ variable "throughput" {
 }
 
 variable "containers" {
-  description = "List of container definitions"
+  description = "List of container configs: name, partition_key"
   type = list(object({
     name          = string
     partition_key = string
   }))
+  default = []
 }
 
 variable "tags" {

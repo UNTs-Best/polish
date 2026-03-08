@@ -39,5 +39,9 @@ az storage container create \
 echo ""
 echo "Backend storage is ready. Initialize Terraform with:"
 echo ""
-echo '  terraform init -backend-config="key=polish-dev.tfstate"'
+echo "  # Per environment (dev, test, stage, prod):"
+echo '  terraform init -backend-config="key=polish-dev.tfstate"    # dev'
+echo '  terraform init -backend-config="key=polish-test.tfstate"   # test'
+echo '  terraform init -backend-config="key=polish-stage.tfstate"   # staging'
+echo '  terraform init -backend-config="key=polish-prod.tfstate"     # prod'
 echo ""
