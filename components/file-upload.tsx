@@ -76,7 +76,14 @@ export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
     }
   }
 
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
   const processFile = async (file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      setError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 10MB.`)
+      return
+    }
+
     setIsUploading(true)
     setUploadProgress(0)
     setError(null)

@@ -10,6 +10,14 @@ import { ArrowLeft } from "lucide-react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
 
+/** Must match server: 8+ chars, at least one letter and one number. */
+function validatePassword(password: string): string | null {
+  if (!password || password.length < 8) return "Password must be at least 8 characters"
+  if (!/[a-zA-Z]/.test(password)) return "Password must contain at least one letter"
+  if (!/[0-9]/.test(password)) return "Password must contain at least one number"
+  return null
+}
+
 export default function SignupPage() {
   const router = useRouter()
   const [name, setName] = useState("")
@@ -28,8 +36,9 @@ export default function SignupPage() {
       return
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters")
+    const pwdError = validatePassword(password)
+    if (pwdError) {
+      setError(pwdError)
       return
     }
 
@@ -136,6 +145,9 @@ export default function SignupPage() {
                 required
                 className="w-full"
               />
+              <p className="text-xs text-slate-500">
+                At least 8 characters, one letter and one number
+              </p>
             </div>
 
             <div className="space-y-2">

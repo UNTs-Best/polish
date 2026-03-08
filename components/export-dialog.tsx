@@ -313,6 +313,142 @@ function generateLatex(doc: DocumentContent): string {
   return lines.join("\n")
 }
 
+// Generate real DOCX using the docx library
+async function generateDocx(doc: DocumentContent): Promise<Blob> {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle, TabStopPosition, TabStopType } = await import("docx")
+
+  const children: any[] = []
+
+  // Header — name
+  children.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 80 },
+      children: [new TextRun({ text: doc.name, bold: true, size: 32, font: "Calibri" })],
+    })
+  )
+  if (doc.title) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 40 },
+        children: [new TextRun({ text: doc.title, size: 20, font: "Calibri" })],
+      })
+    )
+  }
+  if (doc.contact) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 120 },
+        children: [new TextRun({ text: doc.contact, size: 18, font: "Calibri" })],
+      })
+    )
+  }
+
+  const sectionHeading = (title: string) =>
+    new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 200, after: 80 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" } },
+      children: [new TextRun({ text: title.toUpperCase(), bold: true, size: 22, font: "Calibri" })],
+    })
+
+  const entryHeader = (left: string, right: string, bold = true) =>
+    new Paragraph({
+      spacing: { after: 20 },
+      tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
+      children: [
+        new TextRun({ text: left, bold, size: 20, font: "Calibri" }),
+        new TextRun({ text: "\t" }),
+        new TextRun({ text: right, size: 18, font: "Calibri" }),
+      ],
+    })
+
+  const subHeader = (left: string, right: string) =>
+    new Paragraph({
+      spacing: { after: 40 },
+      tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
+      children: [
+        new TextRun({ text: left, italics: true, size: 18, font: "Calibri" }),
+        new TextRun({ text: "\t" }),
+        new TextRun({ text: right, italics: true, size: 18, font: "Calibri" }),
+      ],
+    })
+
+  const bullet = (text: string) =>
+    new Paragraph({
+      bullet: { level: 0 },
+      spacing: { after: 20 },
+      children: [new TextRun({ text, size: 18, font: "Calibri" })],
+    })
+
+  // Education
+  if (doc.education?.length) {
+    children.push(sectionHeading("Education"))
+    for (const edu of doc.education) {
+      if (edu.school) children.push(entryHeader(edu.school, edu.location || ""))
+      if (edu.degree) children.push(subHeader(edu.degree, edu.period || ""))
+    }
+  }
+
+  // Experience
+  if (doc.experience?.length) {
+    children.push(sectionHeading("Experience"))
+    for (const exp of doc.experience) {
+      children.push(entryHeader(exp.role, exp.period || ""))
+      if (exp.company) children.push(subHeader(exp.company, exp.location || ""))
+      for (const b of exp.bullets) children.push(bullet(b))
+    }
+  }
+
+  // Projects
+  if (doc.projects?.length) {
+    children.push(sectionHeading("Projects"))
+    for (const proj of doc.projects) {
+      const projTitle = proj.tech ? `${proj.name} | ${proj.tech}` : proj.name
+      children.push(entryHeader(projTitle, proj.period || ""))
+      for (const b of proj.bullets) children.push(bullet(b))
+    }
+  }
+
+  // Leadership
+  if (doc.leadership?.length) {
+    children.push(sectionHeading("Leadership"))
+    for (const lead of doc.leadership) {
+      children.push(entryHeader(lead.role, lead.period || ""))
+      if (lead.organization) children.push(subHeader(lead.organization, lead.location || ""))
+      for (const b of lead.bullets) children.push(bullet(b))
+    }
+  }
+
+  // Skills
+  if (doc.skills) {
+    children.push(sectionHeading("Technical Skills"))
+    children.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        children: [new TextRun({ text: doc.skills.replace(/\|/g, "  |  "), size: 18, font: "Calibri" })],
+      })
+    )
+  }
+
+  const docFile = new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: { top: 720, bottom: 720, left: 720, right: 720 },
+          },
+        },
+        children,
+      },
+    ],
+  })
+
+  return await Packer.toBlob(docFile)
+}
+
 // Generate RTF
 function generateRtf(doc: DocumentContent): string {
   const lines: string[] = []
@@ -480,9 +616,8 @@ export function ExportDialog({ children, documentContent, simulateError, sourceF
           break
         }
         case "docx": {
-          // DOCX is complex binary format — export as RTF which Word can open
-          const rtfContent = generateRtf(doc)
-          downloadBlob(new Blob([rtfContent], { type: "application/rtf" }), `${baseName}.rtf`)
+          const docxBlob = await generateDocx(doc)
+          downloadBlob(docxBlob, `${baseName}.docx`)
           break
         }
         default:

@@ -2,9 +2,8 @@
 
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
-import { Undo, Download, Check, X, ArrowLeft, HelpCircle, Clock, Upload, Wand2, User, LogOut, ChevronDown } from "lucide-react"
+import { Undo, Download, Check, ArrowLeft, HelpCircle, Clock, Upload, User, LogOut, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +22,7 @@ import { ClaudeConnect, ClaudeConnectionStatus } from "@/components/claude-conne
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import type { FormatLabel } from "@/lib/document-parser"
+import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
 import { getUserItem, setUserItem, removeUserItem, clearUserData } from "@/lib/user-storage"
@@ -120,21 +119,18 @@ export default function EditorPage() {
   const router = useRouter()
   const [user, setUser] = useState<{ email: string; name: string } | null>(null)
   const [selectedText, setSelectedText] = useState("")
-  const [aiSuggestion, setAiSuggestion] = useState("")
-  const [showSuggestion, setShowSuggestion] = useState(false)
-  const [simulateChatError, setSimulateChatError] = useState(false)
-  const [simulateExportError, setSimulateExportError] = useState(false)
+  const [simulateExportError] = useState(false)
   const [showUploadDialog, setShowUploadDialog] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([])
   const [showPendingChanges, setShowPendingChanges] = useState(false)
   const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([])
   const [showVersionHistory, setShowVersionHistory] = useState(false)
-  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const [, setLastSavedAt] = useState<Date | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [documentId, setDocumentId] = useState<string | null>(null)
   const [isCosmosDbEnabled, setIsCosmosDbEnabled] = useState(false)
-  const [cosmosDbError, setCosmosDbError] = useState<string | null>(null)
+  const [, setCosmosDbError] = useState<string | null>(null)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [userRole, setUserRole] = useState<string | undefined>()
   const { toast } = useToast()
@@ -318,8 +314,8 @@ export default function EditorPage() {
 
           console.log("[v0] Successfully loaded uploaded content:", uploadedFilename)
           return true // Uploaded content was loaded
-        } catch (e) {
-          console.error("[v0] Failed to parse uploaded content:", e)
+        } catch {
+          console.error("[v0] Failed to parse uploaded content")
         }
       }
 
@@ -451,39 +447,6 @@ export default function EditorPage() {
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
 
-  const handleTextSelection = (text: string) => {
-    setSelectedText(text)
-    if (text.trim()) {
-      if (text.toLowerCase().includes("experienced")) {
-        setAiSuggestion(
-          `"Accomplished professional with proven expertise in ${text.toLowerCase().replace("experienced", "").trim()}"`,
-        )
-      } else if (text.toLowerCase().includes("led") || text.toLowerCase().includes("managed")) {
-        setAiSuggestion(
-          `"Spearheaded and optimized ${text
-            .toLowerCase()
-            .replace(/led|managed/gi, "")
-            .trim()}"`,
-        )
-      } else {
-        setAiSuggestion(
-          `Enhanced version: "${text.charAt(0).toUpperCase() + text.slice(1).replace(/\b\w/g, (l) => l.toUpperCase())}"`,
-        )
-      }
-      setShowSuggestion(true)
-    }
-  }
-
-  const acceptSuggestion = () => {
-    setShowSuggestion(false)
-    setSelectedText("")
-  }
-
-  const rejectSuggestion = () => {
-    setShowSuggestion(false)
-    setSelectedText("")
-  }
-
   const handleApplySuggestion = (changes: SuggestedChanges) => {
     console.log("[v0] Applying changes:", changes)
 
@@ -599,122 +562,18 @@ export default function EditorPage() {
     setSourceFormat(format)
     setShowUploadDialog(false)
 
-    const lines = content.split("\n").filter((line) => line.trim())
-
-    const name = lines[0] || "Mohamed Babiker"
-
-    const contact = lines[1] || "mohamedaebabiker@gmail.com | (682) 702-9491"
-
-    const educationStart = lines.findIndex((line) => line.trim() === "Education")
-    const technicalSkillsStart = lines.findIndex((line) => line.trim() === "Technical Skills")
-
-    const education = [
-      {
-        school: "University of North Texas",
-        degree: "Bachelors of Science in Computer Science, Major GPA: 3.8",
-        location: "Denton, TX",
-        period: "May 2026",
-      },
-    ]
-
-    const experienceStart = lines.findIndex((line) => line.trim() === "Experience")
-    const projectsStart = lines.findIndex((line) => line.trim() === "Projects")
-
-    const experience = [
-      {
-        role: "Research Assistant, Machine Learning",
-        company: "The Oluwadare Lab",
-        location: "Denton, TX",
-        period: "Aug 2025 - Present",
-        bullets: [
-          "Developed algorithms for genomic analysis, processing 10,000+ sequences and identifying 150+ disease patterns.",
-          "Implemented Python TensorFlow models to analyze genome organization, improved prediction accuracy by 25%.",
-          "Enhanced lab infrastructure by optimizing data pipelines and workflows, reducing processing time by 35%.",
-          "Created visualization tools for genomic data analysis, reducing sequence pattern identification time by 30%.",
-        ],
-      },
-      {
-        role: "Software Engineer Intern, Cloud Services",
-        company: "HashiCorp (an IBM Company)",
-        location: "San Francisco, CA",
-        period: "May 2025 - Aug 2025",
-        bullets: [
-          "Collaborated with PM and Design leads to redesign billing interfaces across subscription tiers for 500M downloads.",
-          "Increased Trial-to-PAYG conversions by 12% by conducting user research and streamlining upgrade flow friction.",
-          "Delivered feature parity between billing interfaces using Go, Ember.js, JavaScript, TypeScript, and HDS.",
-          "Accelerated engineer onboarding by 40% by identifying documentation gaps and updating internal technical docs.",
-        ],
-      },
-      {
-        role: "AI Fellow",
-        company: "Notable Capital (prev. GGV Capital)",
-        location: "San Francisco, CA",
-        period: "May 2025 - Aug 2025",
-        bullets: [
-          "Developed AI startup concept and pitched to Notable Capital partners, ranking Top 5 of 29 fellows on Demo Day.",
-          "Conducted market research analyzing Notable's $5B portfolio: Airbnb, Anthropic, Vercel, Slack, Coinbase, etc.",
-          "Refined business model through weekly feedback sessions with portfolio founders and Notable investment partners.",
-          "Developed 12-month product roadmap and financial model, receiving positive feedback from 3 Notable partners.",
-        ],
-      },
-      {
-        role: "Software Engineer Intern",
-        company: "City Point Billing",
-        location: "Dallas, TX",
-        period: "May 2024 - Aug 2024",
-        bullets: [
-          "Reduced billing report latency by 30% optimizing SQL queries and ETL pipelines in PostgreSQL.",
-          "Improved claim validation accuracy by 15% prototyping anomaly-detection models with Python and scikit-learn.",
-          "Sped up deployments by 20% containerizing Flask microservices with Docker and CI/CD checks.",
-          "Decreased data processing errors by 25% integrating automated review flags for medical dataset validation.",
-        ],
-      },
-    ]
-
-    const projects = [
-      {
-        name: "IronInterview",
-        tech: "TypeScript, React, Node.js, Go, Docker, AWS, PostgreSQL",
-        period: "May 2025 - Aug 2025",
-        bullets: [
-          "Built real-time interview monitoring platform handling 50+ concurrent sessions receiving $50K acquisition offer.",
-          "Implemented AI-powered candidate verification using behavioral analysis and secure session recording.",
-        ],
-      },
-      {
-        name: "SwiftCareerAI",
-        tech: "Swift, Python, OpenAI, UIKit, Core Data",
-        period: "Nov 2024 - Jan 2025",
-        bullets: [
-          "Developed AI-powered iOS application leveraging OpenAI GPT-4 API for intelligent form recognition processing.",
-          "Automated job application workflow reducing manual entry by 50% using NLP and smart mapping.",
-        ],
-      },
-    ]
-
-    const leadership = [
-      {
-        role: "Vice President of Outreach",
-        organization: "National Society of Black Engineers",
-        location: "Denton, TX",
-        period: "Jan 2024 - Present",
-        bullets: [
-          "Organized 8 professional development events including workshops and info sessions, engaging 50+ members.",
-          "Built relationships with 3 tech companies to provide career resources and recruiting opportunities for members.",
-        ],
-      },
-    ]
+    // Parse the actual file content into structured resume data
+    const parsed = parseResumeText(content)
 
     setDocumentContent({
-      name,
-      title: "Software Engineer",
-      contact,
-      education,
-      experience,
-      projects,
-      leadership,
-      skills:
-        "Languages: Go, Python, JavaScript, TypeScript, SQL, Swift | Developer Tools: AWS, Docker, Git, Linux/Unix, CI/CD, Google Cloud, PostgreSQL, MongoDB, Azure, Jupyter | Libraries: React, Flask, scikit-learn, UIKit, Next.js, Django, numpy, pandas, Matplotlib, TensorFlow",
+      name: parsed.name || "Your Name",
+      title: parsed.title || "",
+      contact: parsed.contact || "",
+      education: parsed.education?.length ? parsed.education : [{ school: "", degree: "", location: "", period: "" }],
+      experience: parsed.experience || [],
+      projects: parsed.projects || [],
+      leadership: parsed.leadership || [],
+      skills: parsed.skills || "",
     })
 
     createVersionSnapshot(`Uploaded file: ${file.name}`)
@@ -723,10 +582,12 @@ export default function EditorPage() {
     }, 100)
   }
 
-  const handleRestoreVersion = async (version: DocumentVersion) => {
-    setDocumentContent(version.content)
-    await createVersionSnapshot(`Restored to: ${version.description}`)
-    console.log("[v0] Restored version:", version.id)
+  const handleRestoreVersion = async (version: { id: string; timestamp: string; description: string; content?: any }) => {
+    if (version.content) {
+      setDocumentContent(version.content)
+      await createVersionSnapshot(`Restored to: ${version.description}`)
+      console.log("[v0] Restored version:", version.id)
+    }
   }
 
   const handleResetVersionHistory = async () => {
@@ -784,7 +645,7 @@ export default function EditorPage() {
       try {
         const data = JSON.parse(onboardingData)
         setUserRole(data.role)
-      } catch (e) {
+      } catch {
         console.error("Failed to parse onboarding data")
       }
     }
@@ -827,7 +688,7 @@ export default function EditorPage() {
   }
 
   // Handler for mouse up to capture text selection from the resume
-  const handleMouseUp = (e: React.MouseEvent) => {
+  const handleMouseUp = (_e: React.MouseEvent) => {
     const selection = window.getSelection()
     if (selection && selection.toString().trim()) {
       const text = selection.toString().trim()
@@ -1009,39 +870,6 @@ export default function EditorPage() {
             isTextHighlighted={isTextHighlighted}
           />
 
-          {/* AI Suggestion Popup */}
-          {showSuggestion && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
-              <Card className="p-4 shadow-xl border-border bg-background max-w-md">
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Wand2 className="w-4 h-4 text-foreground" />
-                    <span className="font-medium text-sm text-foreground">AI Suggestion</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Selected: "{selectedText.substring(0, 50)}
-                    {selectedText.length > 50 ? "..." : ""}"
-                  </p>
-                  <p className="text-sm text-foreground">{aiSuggestion}</p>
-                  <div className="flex space-x-2">
-                    <Button
-                      size="sm"
-                      onClick={acceptSuggestion}
-                      className="bg-foreground text-background hover:bg-foreground/90"
-                    >
-                      <Check className="w-3 h-3 mr-1" />
-                      Accept
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={rejectSuggestion}>
-                      <X className="w-3 h-3 mr-1" />
-                      Reject
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-
           {/* Inline Prompt Component */}
           {showInlinePrompt && selectedText && (
             <InlinePrompt
@@ -1087,11 +915,3 @@ export default function EditorPage() {
   )
 }
 
-function formatLastSaved(lastSavedAt: Date | null): string {
-  if (!lastSavedAt) return "Not saved yet"
-  const now = new Date()
-  const diff = Math.floor((now.getTime() - lastSavedAt.getTime()) / 1000)
-  if (diff < 60) return "Saved just now"
-  if (diff < 3600) return `Saved ${Math.floor(diff / 60)}m ago`
-  return `Saved ${Math.floor(diff / 3600)}h ago`
-}
