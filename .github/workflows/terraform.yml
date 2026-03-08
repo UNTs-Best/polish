@@ -53,6 +53,10 @@ jobs:
           terraform_version: "1.5.0"
           terraform_wrapper: false
 
+      - name: Terraform Format Check
+        working-directory: infrastructure/terraform
+        run: terraform fmt -check -recursive -diff || true
+
       - name: Terraform Init
         id: init
         working-directory: infrastructure/terraform
@@ -92,6 +96,13 @@ jobs:
           path: infrastructure/terraform/tfplan-${{ matrix.env }}
           retention-days: 5
         if: success() && github.event_name == 'pull_request'
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Terraform (${{ matrix.env }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: \`${{ matrix.env }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- State key: \`polish-${{ matrix.env }}.tfstate\`" >> $GITHUB_STEP_SUMMARY
   # Optional: add a separate apply job with environment approval for prod/stage
   # terraform-apply:
   #   needs: terraform

@@ -23,6 +23,9 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: "18"
+
 jobs:
   # ---------------------------------------------------------------------------
   # Determine which environment to deploy to
@@ -32,20 +35,26 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
+      branch: ${{ steps.set-env.outputs.branch }}
     steps:
       - name: Set environment from branch or input
         id: set-env
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+            echo "branch=manual" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
             echo "environment=dev" >> "$GITHUB_OUTPUT"
+            echo "branch=develop" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
             echo "environment=test" >> "$GITHUB_OUTPUT"
+            echo "branch=test" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
             echo "environment=stage" >> "$GITHUB_OUTPUT"
+            echo "branch=staging" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "environment=prod" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
           fi
 
   # ---------------------------------------------------------------------------
@@ -62,7 +71,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
 
       - name: Install dependencies
@@ -103,7 +112,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: ./server/package-lock.json
 
@@ -383,7 +392,19 @@ jobs:
       - name: Notify deployment
         if: success()
         run: |
-          echo "Production deployment completed successfully"
-          echo "Commit: ${{ github.sha }}"
-          echo "Deployed by: ${{ github.actor }}"
-          # Add Slack/Teams/Discord notification here
+          echo "## Production deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+
+  deploy-summary:
+    name: Deployment summary
+    runs-on: ubuntu-latest
+    needs: [resolve-env]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## Deploy workflow" >> $GITHUB_STEP_SUMMARY
+          echo "Target environment: **${{ needs.resolve-env.outputs.environment }}**" >> $GITHUB_STEP_SUMMARY
+          echo "Source branch: ${{ needs.resolve-env.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
