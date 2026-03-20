@@ -161,13 +161,13 @@ jobs:
       url: ${{ vars.APP_URL }}
     steps:
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-build
           path: frontend
 
       - name: Download server artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: server-build
           path: server
@@ -222,13 +222,13 @@ jobs:
       url: ${{ vars.APP_URL }}
     steps:
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-build
           path: frontend
 
       - name: Download server artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: server-build
           path: server
@@ -281,13 +281,13 @@ jobs:
       url: ${{ vars.APP_URL }}
     steps:
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-build
           path: frontend
 
       - name: Download server artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: server-build
           path: server
@@ -341,13 +341,13 @@ jobs:
       url: ${{ vars.APP_URL }}
     steps:
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-build
           path: frontend
 
       - name: Download server artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: server-build
           path: server
