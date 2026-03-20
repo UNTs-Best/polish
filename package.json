@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "latest",
-    "@anthropic-ai/sdk": "^0.74.0",
+    "@anthropic-ai/sdk": "^0.80.0",
     "@azure/cosmos": "latest",
     "@azure/storage-blob": "12.29.1",
     "@hookform/resolvers": "^3.10.0",
