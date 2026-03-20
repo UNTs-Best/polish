@@ -1,8 +1,4 @@
-# Terraform: validate and plan for dev, test, stage, prod
-# Apply is manual or via environment protection rules.
-
 name: Terraform
-
 on:
   push:
     branches: [main, develop, staging, test]
