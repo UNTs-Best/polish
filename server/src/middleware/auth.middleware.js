@@ -66,7 +66,7 @@ export function optionalAuth(req, res, next) {
 
     next();
   } catch (err) {
-    // Don't fail, just continue without auth
+
     req.auth = null;
     next();
   }
@@ -79,8 +79,5 @@ export function requireAdmin(req, res, next) {
   if (!req.auth) {
     return res.status(401).json({ message: 'Authentication required' });
   }
-
-  // TODO: Implement role-based access control
-  // For now, just check if user exists
   next();
 }

@@ -27,9 +27,8 @@ env:
   NODE_VERSION: "18"
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Determine which environment to deploy to
-  # ---------------------------------------------------------------------------
+  # determine which environment to deploy to
+  
   resolve-env:
     name: Resolve environment
     runs-on: ubuntu-latest
@@ -57,9 +56,9 @@ jobs:
             echo "branch=main" >> "$GITHUB_OUTPUT"
           fi
 
-  # ---------------------------------------------------------------------------
+
   # Build frontend (Next.js)
-  # ---------------------------------------------------------------------------
+
   build-frontend:
     name: Build frontend
     runs-on: ubuntu-latest
@@ -95,9 +94,9 @@ jobs:
             next.config.mjs
           retention-days: 5
 
-  # ---------------------------------------------------------------------------
+
   # Build server (Express + Docker)
-  # ---------------------------------------------------------------------------
+
   build-server:
     name: Build server
     runs-on: ubuntu-latest
@@ -149,9 +148,9 @@ jobs:
             server/package-lock.json
           retention-days: 5
 
-  # ---------------------------------------------------------------------------
+
   # Deploy to dev
-  # ---------------------------------------------------------------------------
+
   deploy-dev:
     name: Deploy to dev
     runs-on: ubuntu-latest
@@ -210,9 +209,9 @@ jobs:
           echo "Running dev smoke tests..."
           # curl -sf "${{ vars.APP_URL }}/health" || exit 1
 
-  # ---------------------------------------------------------------------------
+
   # Deploy to test
-  # ---------------------------------------------------------------------------
+
   deploy-test:
     name: Deploy to test
     runs-on: ubuntu-latest
@@ -269,9 +268,9 @@ jobs:
           echo "Running integration tests against test environment..."
           # npm run test:integration -- --base-url "${{ vars.APP_URL }}"
 
-  # ---------------------------------------------------------------------------
+
   # Deploy to stage
-  # ---------------------------------------------------------------------------
+
   deploy-stage:
     name: Deploy to stage
     runs-on: ubuntu-latest
@@ -329,9 +328,9 @@ jobs:
           echo "Running stage smoke tests..."
           # curl -sf "${{ vars.APP_URL }}/health" || exit 1
 
-  # ---------------------------------------------------------------------------
+
   # Deploy to prod
-  # ---------------------------------------------------------------------------
+
   deploy-prod:
     name: Deploy to prod
     runs-on: ubuntu-latest
