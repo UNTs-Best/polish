@@ -1,44 +1,14 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { getDocumentsContainer } from "@/lib/cosmosdb"
+import { NextResponse } from "next/server"
 
-// GET /api/documents/:id - Get a specific document
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params
-    const userId = request.headers.get("x-user-id") || "anonymous"
-    const container = await getDocumentsContainer()
-
-    const { resource } = await container.item(id, userId).read()
-
-    if (!resource) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({ document: resource })
-  } catch (error) {
-    console.error("[v0] Error fetching document:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch document", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 },
-    )
-  }
+// TODO: proxy to Express API (NEXT_PUBLIC_API_URL/api/docs/:id) in TypeScript rewrite
+export async function GET() {
+  return NextResponse.json({ error: "Not implemented — use Express API" }, { status: 501 })
 }
 
-// DELETE /api/documents/:id - Delete a document
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params
-    const userId = request.headers.get("x-user-id") || "anonymous"
-    const container = await getDocumentsContainer()
+export async function POST() {
+  return NextResponse.json({ error: "Not implemented — use Express API" }, { status: 501 })
+}
 
-    await container.item(id, userId).delete()
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("[v0] Error deleting document:", error)
-    return NextResponse.json(
-      { error: "Failed to delete document", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 },
-    )
-  }
+export async function DELETE() {
+  return NextResponse.json({ error: "Not implemented — use Express API" }, { status: 501 })
 }
