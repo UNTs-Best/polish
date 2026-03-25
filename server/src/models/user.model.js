@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
  * User Model for authentication and profile management
  * Supports both local authentication and OAuth providers
  */
+
 export class UserModel {
   constructor(data) {
     this.id = data.id || uuidv4();

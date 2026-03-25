@@ -4,7 +4,6 @@ import morgan from "morgan";
 import helmet from "helmet";
 import dotenv from "dotenv";
 
-import { connectSupabase } from "./config/supabase.js";
 import authRoutes from "./routes/auth.routes.js";
 import oauthRoutes from "./routes/oauth.routes.js";
 import docRoutes from "./routes/document.routes.js";
@@ -36,15 +35,10 @@ app.use("/api/health", (req, res) => {
   res.status(200).json({ message: "OK" });
 });
 
-app.use("/version", versionRoutes);
-
-
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint not found" });
 });
 
 app.use(errorHandler);
-
-connectSupabase();
 
 export default app;

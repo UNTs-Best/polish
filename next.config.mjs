@@ -11,7 +11,7 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack: (config) => {
-    // Ensure pdfjs-dist resolves correctly for client-side usage
+    // Ensure pdfjs-dist resolves correctly for client-side usagge
     config.resolve.alias = {
       ...config.resolve.alias,
       canvas: false,
