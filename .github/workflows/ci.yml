@@ -1,0 +1,45 @@
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (frontend)
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install dependencies (backend)
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Build backend
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Run tests (frontend)
+        working-directory: ./frontend
+        run: npm test -- --watchAll=false
+
+      - name: Run tests (backend)
+        working-directory: ./backend
+        run: npm test
