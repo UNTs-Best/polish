@@ -1,0 +1,36 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Dev / local
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.md
+*.log
+npm-debug.log*
+
+# Server has its own Dockerfile — exclude from frontend image
+server/
+
+# Test artifacts
+coverage/

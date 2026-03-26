@@ -357,7 +357,8 @@ export default function LandingPage() {
   ]
 
   return (
-    <div
+    <>
+    <div>
       className="min-h-screen relative opacity-100"
       style={{
         backgroundColor: "#f8fafc",
@@ -1166,5 +1167,6 @@ export default function LandingPage() {
         }
       `}</style>
     </div>
+    </>
   )
 }
