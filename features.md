@@ -5,9 +5,9 @@
 
 ---
 
-## Tech Stack and Tools
+## Tech Stack and Tools 
 
-### Backend (Express.js — to be rewritten)
+### Backend (Express.js — to be rewritten in TS)
 | Layer | Current | Target (TypeScript rewrite) |
 |-------|---------|------------------------------|
 | Runtime | Node.js ESM | Node.js, TypeScript |
