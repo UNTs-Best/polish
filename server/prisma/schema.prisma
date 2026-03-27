@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String    @unique
+  passwordHash   String?   @map("password_hash")
+  firstName      String?   @map("first_name")
+  lastName       String?   @map("last_name")
+  displayName    String?   @map("display_name")
+  avatarUrl      String?   @map("avatar_url")
+  authProvider   String    @default("local") @map("auth_provider")
+  authProviderId String?   @map("auth_provider_id")
+  emailVerified  Boolean   @default(false) @map("email_verified")
+  isActive       Boolean   @default(true) @map("is_active")
+  lastLogin      DateTime? @map("last_login")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  documents      Document[]
+  versions       Version[]
+  sessions       Session[]
+  aiInteractions AiInteraction[]
+
+  @@map("users")
+}
+
+model Document {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  title        String
+  content      String    @default("")
+  documentType String?   @map("document_type")
+  status       String?
+  fileName     String?   @map("file_name")
+  fileUrl      String?   @map("file_url")
+  fileSize     Int?      @map("file_size")
+  mimeType     String?   @map("mime_type")
+  metadata     Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions       Version[]
+  aiInteractions AiInteraction[]
+
+  @@index([userId])
+  @@map("documents")
+}
+
+model Version {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  content       String   @default("")
+  changeSummary String?  @map("change_summary")
+  createdBy     String?  @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([documentId])
+  @@map("versions")
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  token        String?
+  refreshToken String?  @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
+}
+
+model AiInteraction {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  documentId       String?  @map("document_id") @db.Uuid
+  prompt           String?
+  response         String?
+  model            String?
+  promptTokens     Int?     @map("prompt_tokens")
+  completionTokens Int?     @map("completion_tokens")
+  totalTokens      Int?     @map("total_tokens")
+  cost             Decimal? @db.Decimal(10, 6)
+  meta             Json?
+  interactionType  String   @default("chat") @map("interaction_type")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([documentId])
+  @@map("ai_interactions")
+}

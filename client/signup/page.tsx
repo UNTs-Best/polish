@@ -54,6 +54,7 @@ export default function SignUp() {
   }
 
   return (
+    <>
     <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
       <div
         className="absolute inset-0"
@@ -204,5 +205,6 @@ export default function SignUp() {
         </p>
       </div>
     </div>
+    </>
   )
 }
