@@ -5,7 +5,7 @@
 
 ---
 
-## Tech Stack
+## Tech Stack and Tools
 
 ### Backend (Express.js — to be rewritten)
 | Layer | Current | Target (TypeScript rewrite) |
