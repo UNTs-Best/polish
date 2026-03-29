@@ -4,3 +4,6 @@
 
 .env
 .DS_Store
+
+!README.md
+!*/CONTRIBUTING.md
