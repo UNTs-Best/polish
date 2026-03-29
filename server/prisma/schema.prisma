@@ -3,32 +3,17 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider =  "postgresql"
+  url      = env("DATABASE_URL") // TODO : put database url in the env file. 
 }
 
 model User {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email          String    @unique
-  passwordHash   String?   @map("password_hash")
-  firstName      String?   @map("first_name")
-  lastName       String?   @map("last_name")
-  displayName    String?   @map("display_name")
-  avatarUrl      String?   @map("avatar_url")
-  authProvider   String    @default("local") @map("auth_provider")
-  authProviderId String?   @map("auth_provider_id")
-  emailVerified  Boolean   @default(false) @map("email_verified")
-  isActive       Boolean   @default(true) @map("is_active")
-  lastLogin      DateTime? @map("last_login")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  userId      String    @id @default(dbgenerated("gen_randon_uuid()"))  @db.Uuid
 
-  documents      Document[]
-  versions       Version[]
-  sessions       Session[]
-  aiInteractions AiInteraction[]
-
-  @@map("users")
+  email       String    @unique
+  hashedpw    String    @unique
+  firstName   String    
+  lastName    String      
 }
 
 model Document {
@@ -37,12 +22,12 @@ model Document {
   title        String
   content      String    @default("")
   documentType String?   @map("document_type")
-  status       String?
+
   fileName     String?   @map("file_name")
   fileUrl      String?   @map("file_url")
   fileSize     Int?      @map("file_size")
   mimeType     String?   @map("mime_type")
-  metadata     Json?
+
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
@@ -59,9 +44,9 @@ model Version {
   documentId    String   @map("document_id") @db.Uuid
   versionNumber Int      @map("version_number")
   content       String   @default("")
-  changeSummary String?  @map("change_summary")
-  createdBy     String?  @map("created_by") @db.Uuid
-  createdAt     DateTime @default(now()) @map("created_at")
+  changeSummary String?  @map("change_summary") // just add diff
+  // createdBy     String?  @map("created_by") @db.Uuid
+  // createdAt     DateTime @default(now()) @map("created_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   author   User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
