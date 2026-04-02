@@ -145,7 +145,7 @@ export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
                     <p className="text-sm font-medium text-slate-900">
                       {detectedFormat ? `Parsing ${detectedFormat} file...` : "Uploading resume..."}
                     </p>
-                    <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="w-full max-w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-slate-900 transition-all duration-300 ease-out"
                         style={{ width: `${uploadProgress}%` }}

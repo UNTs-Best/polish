@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
-import { Send, AlertCircle, Check, X, Undo, Mic, Paperclip, Plug, MessageSquare } from "lucide-react"
+import { Send, AlertCircle, Check, X, Undo, Mic, Paperclip, MessageSquare } from "lucide-react"
 
 interface Message {
   role: "user" | "assistant" | "error"
@@ -40,8 +40,7 @@ interface AIChatProps {
   onClearSelection?: () => void
   simulateError?: boolean
   documentContent?: DocumentContent
-  apiKey?: string
-  onConnectClick?: () => void
+  className?: string
 }
 
 const QUICK_ACTIONS = [
@@ -53,16 +52,13 @@ const QUICK_ACTIONS = [
 ]
 
 export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) => void }, AIChatProps>(function AIChat(
-  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent, apiKey, onConnectClick },
+  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent, className },
   ref,
 ) {
-  const isConnected = !!apiKey
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: isConnected
-        ? "What would you like me to improve? Select text or use a quick action below."
-        : "Connect your Claude API key to start editing with AI.",
+      content: "What would you like me to improve? Select text or use a quick action below.",
       timestamp: new Date(),
     },
   ])
@@ -90,26 +86,9 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
     }
   }, [selectedText])
 
-  useEffect(() => {
-    setMessages((prev) => {
-      if (prev.length === 1 && prev[0].role === "assistant") {
-        return [
-          {
-            role: "assistant",
-            content: isConnected
-              ? "What would you like me to improve? Select text or use a quick action below."
-              : "Connect your Claude API key to start editing with AI.",
-            timestamp: new Date(),
-          },
-        ]
-      }
-      return prev
-    })
-  }, [isConnected])
-
   const handleSendMessage = async (messageText?: string, contextText?: string) => {
     const messageToSend = messageText || input
-    if (!messageToSend.trim() || isLoading || !isConnected) return
+    if (!messageToSend.trim() || isLoading) return
 
     const displayMessage =
       contextText || currentSelection
@@ -132,7 +111,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-anthropic-key": apiKey!,
         },
         body: JSON.stringify({
           message: messageToSend,
@@ -244,7 +222,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
 
   return (
     <div
-      className="w-96 border-l border-slate-200/60 flex flex-col"
+      className={`w-full lg:w-96 h-[42vh] min-h-[320px] lg:h-auto lg:min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200/60 flex flex-col ${className || ""}`}
       style={{
         backgroundColor: "#fafbfc",
         backgroundImage: `
@@ -271,8 +249,8 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                 <span className="text-slate-900"> Assistant</span>
               </h3>
               <div className="flex items-center gap-1.5">
-                <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-orange-500" : "bg-gray-400"}`} />
-                <p className="text-xs text-slate-500">{isConnected ? "MCP Server Active" : "Not connected"}</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                <p className="text-xs text-slate-500">AI Ready</p>
               </div>
             </div>
           </div>
@@ -292,7 +270,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       </div>
 
       {/* Quick Actions (Prism-inspired) */}
-      {isConnected && messages.length <= 2 && !isLoading && (
+      {messages.length <= 2 && !isLoading && (
         <div className="px-4 pt-3 pb-1">
           <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">Quick actions</p>
           <div className="flex flex-wrap gap-1.5">
@@ -429,47 +407,37 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
 
       {/* Input area */}
       <div className="p-4 bg-white/80 backdrop-blur-sm border-t border-slate-200/60">
-        {!isConnected ? (
-          <button
-            onClick={onConnectClick}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-50 border border-slate-200/80 rounded-xl text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-          >
-            <Plug className="w-4 h-4" />
-            Connect Claude API Key to start
-          </button>
-        ) : (
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-2">
-            <input
-              type="text"
-              placeholder="What would you like me to improve?"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={isLoading}
-              className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-              aria-label="Chat input field"
-            />
-            <div className="flex items-center gap-1">
-              <button className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" aria-label="Voice input">
-                <Mic className="w-4 h-4" />
-              </button>
-              <button
-                className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
-                aria-label="Attach file"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={isLoading || !input.trim()}
-                className="p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-50 transition-colors"
-                aria-label="Send message"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </div>
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-2">
+          <input
+            type="text"
+            placeholder="What would you like me to improve?"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={isLoading}
+            className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+            aria-label="Chat input field"
+          />
+          <div className="flex items-center gap-1">
+            <button className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" aria-label="Voice input">
+              <Mic className="w-4 h-4" />
+            </button>
+            <button
+              className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="Attach file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleSendMessage()}
+              disabled={isLoading || !input.trim()}
+              className="p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-50 transition-colors"
+              aria-label="Send message"
+            >
+              <Send className="w-4 h-4" />
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

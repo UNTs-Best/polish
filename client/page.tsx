@@ -696,9 +696,11 @@ export default function LandingPage() {
                   setShowChatCaret(false)
                   setScrollPosition(0)
                 }}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                aria-label="Close demo"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
               >
-                <X className="w-5 h-5" />
+                <X className="h-4 w-4" />
+                <span>Close</span>
               </button>
             </div>
 

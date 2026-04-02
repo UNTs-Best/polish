@@ -76,7 +76,7 @@ export function InlinePrompt({ selectedText, position, onSubmit, onClose }: Inli
   }
 
   const getAdjustedPosition = () => {
-    const popupWidth = 360
+    const popupWidth = Math.min(360, window.innerWidth - 32)
     const popupHeight = 180
     const padding = 16
 
@@ -109,7 +109,7 @@ export function InlinePrompt({ selectedText, position, onSubmit, onClose }: Inli
         top: adjustedPosition.y,
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-3 w-[360px]">
+      <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-3 w-[min(360px,calc(100vw-32px))]">
         {/* Selected text preview */}
         <div className="mb-2 pb-2 border-b border-slate-100">
           <p className="text-xs text-slate-500 mb-1">Selected text</p>

@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -9,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff, ArrowRight } from "lucide-react"
+import { supabase } from "@/lib/supabase-browser"
 
 export default function SignIn() {
   const router = useRouter()
@@ -28,31 +28,28 @@ export default function SignIn() {
     setIsLoading(true)
     setError("")
 
-    try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-      const res = await fetch(`${API_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Login failed")
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
-      localStorage.setItem("polish_user", JSON.stringify(data.user))
-      localStorage.setItem("polish_access_token", data.accessToken)
-      localStorage.setItem("polish_refresh_token", data.refreshToken)
-
-      router.push("/dashboard")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed")
-    } finally {
+    if (authError) {
+      setError(authError.message)
       setIsLoading(false)
+      return
     }
+
+    const user = data.user
+    const name =
+      [user.user_metadata?.first_name, user.user_metadata?.last_name].filter(Boolean).join(" ") ||
+      user.user_metadata?.name ||
+      email.split("@")[0]
+
+    localStorage.setItem("polish_user", JSON.stringify({ email: user.email, name, id: user.id }))
+
+    const hasOnboarded = localStorage.getItem(`polish_onboarding_${user.id}`)
+    router.push(hasOnboarded ? "/editor" : "/onboarding")
   }
 
   return (
-    <>
-    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       <div
         className="absolute inset-0"
         style={{
@@ -64,25 +61,19 @@ export default function SignIn() {
           backgroundSize: "48px 48px",
         }}
       />
-
-      {/* Gradient blurs for depth */}
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-gradient-to-bl from-slate-200/40 to-transparent rounded-full blur-3xl" />
       <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-gradient-to-tr from-slate-100/60 to-transparent rounded-full blur-3xl" />
-
-      {/* Subtle radial gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-white/80 via-transparent to-white/60" />
 
-      {/* Form card */}
       <div className="relative w-full max-w-md z-10">
-        <div className="text-center mb-10">
+        <div className="text-center mb-8 sm:mb-10">
           <Link href="/" className="inline-block">
             <span className="text-3xl font-bold text-slate-900 tracking-tight">Polish</span>
           </Link>
         </div>
 
-        {/* Card with enhanced styling */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)]">
-          <div className="text-center mb-8">
+        <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-3xl p-5 sm:p-8 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)]">
+          <div className="text-center mb-7 sm:mb-8">
             <h1 className="text-2xl font-semibold text-slate-900">Welcome back</h1>
             <p className="text-slate-500 mt-2 text-sm">Sign in to continue editing your resume</p>
           </div>
@@ -164,7 +155,7 @@ export default function SignIn() {
           </div>
 
           <p className="text-center text-sm text-slate-500">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/signup" className="text-slate-900 font-semibold hover:underline underline-offset-2">
               Create one
             </Link>
@@ -172,6 +163,5 @@ export default function SignIn() {
         </div>
       </div>
     </div>
-    </>
   )
 }

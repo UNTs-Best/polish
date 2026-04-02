@@ -1,0 +1,66 @@
+name: Deploy to Amplify
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & deploy via Amplify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Trigger Amplify build
+        id: start-job
+        run: |
+          JOB_ID=$(aws amplify start-job \
+            --app-id ${{ secrets.AMPLIFY_APP_ID }} \
+            --branch-name main \
+            --job-type RELEASE \
+            --query 'jobSummary.jobId' \
+            --output text)
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "Started Amplify job: $JOB_ID"
+
+      - name: Wait for build to complete
+        run: |
+          JOB_ID=${{ steps.start-job.outputs.job_id }}
+          echo "Polling job $JOB_ID..."
+          for i in $(seq 1 40); do
+            STATUS=$(aws amplify get-job \
+              --app-id ${{ secrets.AMPLIFY_APP_ID }} \
+              --branch-name main \
+              --job-id $JOB_ID \
+              --query 'job.summary.status' --output text)
+            echo "  [$i] $STATUS"
+            if [ "$STATUS" = "SUCCEED" ]; then
+              echo "✅ Amplify build succeeded"
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo "❌ Amplify build $STATUS"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "❌ Timed out waiting for Amplify build"
+          exit 1
+
+      - name: Smoke test
+        run: |
+          curl -sf ${{ secrets.APP_URL }} \
+            -o /dev/null \
+            || (echo "❌ Smoke test failed" && exit 1)
+          echo "✅ App is live at ${{ secrets.APP_URL }}"

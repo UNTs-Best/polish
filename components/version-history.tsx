@@ -88,7 +88,7 @@ export function VersionHistory({ isOpen, onClose, onRestore, currentVersions, on
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-2xl max-h-[80vh]" aria-describedby="version-history-description">
+        <DialogContent className="max-w-2xl max-h-[85vh]" aria-describedby="version-history-description">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5" />
@@ -99,7 +99,7 @@ export function VersionHistory({ isOpen, onClose, onRestore, currentVersions, on
             View and restore previous versions of your resume
           </p>
 
-          <ScrollArea className="h-[500px] pr-4">
+          <ScrollArea className="h-[60vh] sm:h-[500px] pr-2 sm:pr-4">
             {versions.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Clock className="w-12 h-12 text-slate-300 mb-3" />
@@ -155,7 +155,7 @@ export function VersionHistory({ isOpen, onClose, onRestore, currentVersions, on
             )}
           </ScrollArea>
 
-          <div className="flex justify-between pt-4 border-t">
+          <div className="flex flex-wrap gap-2 justify-between pt-4 border-t">
             {onReset && versions.length > 0 && (
               <Button
                 variant="outline"

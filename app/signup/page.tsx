@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -9,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff, ArrowRight, Check } from "lucide-react"
+import { supabase } from "@/lib/supabase-browser"
 
 export default function SignUp() {
   const router = useRouter()
@@ -45,32 +45,23 @@ export default function SignUp() {
     setIsLoading(true)
     setError("")
 
-    try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-      const name = email.split("@")[0]
-      const res = await fetch(`${API_URL}/api/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, firstName: name, lastName: "" }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Registration failed")
+    const { data, error: authError } = await supabase.auth.signUp({ email, password })
 
-      localStorage.setItem("polish_user", JSON.stringify(data.user))
-      localStorage.setItem("polish_access_token", data.accessToken)
-      localStorage.setItem("polish_refresh_token", data.refreshToken)
-
-      router.push("/onboarding")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed")
-    } finally {
+    if (authError) {
+      setError(authError.message)
       setIsLoading(false)
+      return
     }
+
+    const user = data.user
+    const name = email.split("@")[0]
+
+    localStorage.setItem("polish_user", JSON.stringify({ email, name, id: user?.id }))
+    router.push("/onboarding")
   }
 
   return (
-    <>
-    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       <div
         className="absolute inset-0"
         style={{
@@ -82,25 +73,19 @@ export default function SignUp() {
           backgroundSize: "48px 48px",
         }}
       />
-
-      {/* Gradient blurs for depth */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-gradient-to-br from-slate-200/40 to-transparent rounded-full blur-3xl" />
       <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-gradient-to-tl from-slate-100/60 to-transparent rounded-full blur-3xl" />
-
-      {/* Subtle radial gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-white/80 via-transparent to-white/60" />
 
-      {/* Form card */}
       <div className="relative w-full max-w-md z-10">
-        <div className="text-center mb-10">
+        <div className="text-center mb-8 sm:mb-10">
           <Link href="/" className="inline-block">
             <span className="text-3xl font-bold text-slate-900 tracking-tight">Polish</span>
           </Link>
         </div>
 
-        {/* Card with enhanced styling */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)]">
-          <div className="text-center mb-8">
+        <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-3xl p-5 sm:p-8 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)]">
+          <div className="text-center mb-7 sm:mb-8">
             <h1 className="text-2xl font-semibold text-slate-900">Create your account</h1>
             <p className="text-slate-500 mt-2 text-sm">Start building your perfect resume</p>
           </div>
@@ -220,6 +205,5 @@ export default function SignUp() {
         </p>
       </div>
     </div>
-    </>
   )
 }

@@ -18,7 +18,6 @@ import { ExportDialog } from "@/components/export-dialog"
 import { FileUpload } from "@/components/file-upload"
 import { EditorWelcomeModal } from "@/components/editor-welcome-modal"
 import { InlinePrompt } from "@/components/inline-prompt"
-import { ClaudeConnect, ClaudeConnectionStatus } from "@/components/claude-connect"
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -26,6 +25,7 @@ import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
 import { getUserItem, setUserItem, removeUserItem, clearUserData } from "@/lib/user-storage"
+import { supabase, signOut as supabaseSignOut } from "@/lib/supabase-browser"
 
 interface SuggestedChanges {
   type: string
@@ -129,16 +129,11 @@ export default function EditorPage() {
   const [, setLastSavedAt] = useState<Date | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [documentId, setDocumentId] = useState<string | null>(null)
-  const [isCosmosDbEnabled, setIsCosmosDbEnabled] = useState(false)
-  const [, setCosmosDbError] = useState<string | null>(null)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [userRole, setUserRole] = useState<string | undefined>()
   const { toast } = useToast()
 
   // Claude connection state
-  const [claudeApiKey, setClaudeApiKey] = useState<string | null>(null)
-  const [showClaudeConnect, setShowClaudeConnect] = useState(false)
-
   // Source format state (from uploaded file)
   const [sourceFormat, setSourceFormat] = useState<FormatLabel | null>(null)
 
@@ -208,7 +203,7 @@ export default function EditorPage() {
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const aiChatRef = useRef<{ sendMessage: (prompt: string, text: string) => void } | null>(null)
 
-  // Load user and Claude API key from localStorage on mount
+  // Load user from localStorage on mount
   useEffect(() => {
     const storedUser = localStorage.getItem("polish_user")
     if (storedUser) {
@@ -218,64 +213,60 @@ export default function EditorPage() {
         setUser(null)
       }
     }
-
-    const savedKey = getUserItem("polish_claude_api_key")
-    if (savedKey) {
-      setClaudeApiKey(savedKey)
-    }
   }, [])
 
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const handleSignOut = async () => {
     setIsSigningOut(true)
-    // Clear all user-specific data (Claude API key, preferences, etc.)
     clearUserData()
-    // Clear core session
-    localStorage.removeItem("polish_user")
     sessionStorage.clear()
-    // Reset local state
-    setClaudeApiKey(null)
     setUser(null)
-    // Brief delay so the user sees the "Signing out..." state
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await supabaseSignOut()
     router.push("/signin")
   }
 
   useEffect(() => {
-    const checkCosmosDb = async () => {
+    const loadFromSupabase = async () => {
       try {
-        const response = await fetch("/api/documents", {
-          method: "GET",
-          headers: { "x-user-id": "anonymous" },
-        })
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          loadFromLocalStorage(setDocumentContent, setDocumentVersions)
+          return
+        }
 
-        if (response.ok) {
-          setIsCosmosDbEnabled(true)
-          console.log("[v0] Cosmos DB is available")
+        // If we have a stored document ID, load that specific doc
+        const storedDoc = getUserItem("polishEditor_document")
+        const storedId = storedDoc ? JSON.parse(storedDoc)?.id : null
 
-          // Try to load the most recent document
-          const data = await response.json()
-          if (data.documents && data.documents.length > 0) {
-            const latestDoc = data.documents[0]
-            setDocumentId(latestDoc.id)
-            setDocumentContent(latestDoc.content)
-            console.log("[v0] Loaded document from Cosmos DB:", latestDoc.id)
+        const query = supabase
+          .from("documents")
+          .select("id, title, content")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+
+        if (storedId) query.eq("id", storedId)
+
+        const { data, error } = await query.single()
+
+        if (!error && data?.content) {
+          try {
+            const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content
+            setDocumentId(data.id)
+            setDocumentContent(parsed)
+            console.log("[editor] Loaded document from Supabase:", data.id)
+          } catch {
+            loadFromLocalStorage(setDocumentContent, setDocumentVersions)
           }
         } else {
-          throw new Error("Cosmos DB not configured")
+          loadFromLocalStorage(setDocumentContent, setDocumentVersions)
         }
-      } catch (error) {
-        console.log("[v0] Cosmos DB not available, using localStorage fallback")
-        setIsCosmosDbEnabled(false)
-        setCosmosDbError(error instanceof Error ? error.message : "Unknown error")
-
-        // Fallback to localStorage
+      } catch {
         loadFromLocalStorage(setDocumentContent, setDocumentVersions)
       }
     }
 
-    checkCosmosDb()
+    loadFromSupabase()
   }, [])
 
   useEffect(() => {
@@ -336,42 +327,28 @@ export default function EditorPage() {
       setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
       console.log("[v0] Saved to localStorage")
 
-      if (isCosmosDbEnabled) {
-        // Save to Cosmos DB
-        const response = await fetch("/api/documents", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": "anonymous",
-          },
-          body: JSON.stringify({
-            id: documentId,
-            title: documentContent.name,
-            content: documentContent,
-          }),
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          if (!documentId) {
-            setDocumentId(data.document.id)
-          }
-          setLastSavedAt(new Date())
-          console.log("[v0] Document saved to Cosmos DB successfully")
-        } else {
-          const error = await response.json()
-          console.error("[v0] Cosmos DB save failed:", error)
-          toast({
-            title: "Save Warning",
-            description: "Saved locally but cloud sync failed. Your changes are safe.",
-            variant: "default",
-          })
+      // Sync to Supabase if signed in
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        const payload: Record<string, unknown> = {
+          user_id: session.user.id,
+          title: documentContent.name || "Untitled",
+          content: JSON.stringify(documentContent),
+          updated_at: new Date().toISOString(),
         }
-      } else {
-        // Just localStorage
-        setLastSavedAt(new Date())
-        console.log("[v0] Document saved to localStorage (Cosmos DB not available)")
+        if (documentId) payload.id = documentId
+
+        const { data, error: saveError } = await supabase
+          .from("documents")
+          .upsert(payload, { onConflict: "id" })
+          .select("id")
+          .single()
+
+        if (!saveError && data?.id) {
+          if (!documentId) setDocumentId(data.id)
+        }
       }
+      setLastSavedAt(new Date())
     } catch (error) {
       console.error("[v0] Autosave failed:", error)
       toast({
@@ -406,28 +383,7 @@ export default function EditorPage() {
     setDocumentVersions((prev) => [newVersion, ...prev])
     console.log("[v0] Created version snapshot:", newVersion.id)
 
-    // Save version to Cosmos DB if available
-    if (isCosmosDbEnabled && documentId) {
-      try {
-        const response = await fetch(`/api/documents/${documentId}/versions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": "anonymous",
-          },
-          body: JSON.stringify({
-            content: documentContent,
-            changeDescription: description,
-          }),
-        })
-
-        if (response.ok) {
-          console.log("[v0] Version saved to Cosmos DB")
-        }
-      } catch (error) {
-        console.error("[v0] Failed to save version to Cosmos DB:", error)
-      }
-    }
+    // Version snapshots are stored in localStorage via the versions state effect below
   }
 
   useEffect(() => {
@@ -596,24 +552,6 @@ export default function EditorPage() {
       localStorage.removeItem("polishEditor_versions")
       console.log("[v0] Cleared version history from localStorage")
 
-      // Clear Cosmos DB versions if enabled
-      if (isCosmosDbEnabled && documentId) {
-        try {
-          const response = await fetch(`/api/documents/${documentId}/versions`, {
-            method: "DELETE",
-            headers: {
-              "x-user-id": "anonymous",
-            },
-          })
-
-          if (response.ok) {
-            console.log("[v0] Cleared version history from Cosmos DB")
-          }
-        } catch (error) {
-          console.error("[v0] Failed to clear Cosmos DB versions:", error)
-        }
-      }
-
       // Set to empty array - no versions at all
       setDocumentVersions([])
 
@@ -722,53 +660,32 @@ export default function EditorPage() {
     setSelectedText("")
   }
 
-  // Claude connection handlers
-  const handleClaudeConnect = (key: string) => {
-    setClaudeApiKey(key)
-    setUserItem("polish_claude_api_key", key)
-    toast({
-      title: "Connected to Claude",
-      description: "AI-powered editing is now active.",
-    })
-  }
-
-  const handleClaudeDisconnect = () => {
-    setClaudeApiKey(null)
-    removeUserItem("polish_claude_api_key")
-    toast({
-      title: "Disconnected",
-      description: "Claude API key removed.",
-    })
-  }
-
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="min-h-svh h-svh flex flex-col bg-background">
       {showWelcomeModal && <EditorWelcomeModal onClose={handleCloseWelcome} userRole={userRole} />}
 
       <header className="border-b border-border bg-background sticky top-0 z-40">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <Link href="/">
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
+                <span className="hidden sm:inline">Back</span>
               </Button>
             </Link>
             <span className="font-medium text-foreground">Polish</span>
             <span className="text-xs text-muted-foreground">{isSaving ? "Saving..." : "Autosaved"}</span>
             {uploadedFileName && (
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{uploadedFileName}</span>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded max-w-[200px] truncate">
+                {uploadedFileName}
+              </span>
             )}
             {sourceFormat && (
               <span className="text-xs font-medium bg-slate-900 text-white px-2 py-0.5 rounded-full">{sourceFormat}</span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <ClaudeConnectionStatus
-              isConnected={!!claudeApiKey}
-              onClick={() => setShowClaudeConnect(true)}
-            />
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -782,13 +699,13 @@ export default function EditorPage() {
               <Clock className="w-4 h-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={() => setShowUploadDialog(true)}>
-              <Upload className="w-4 h-4 mr-2" />
-              Upload
+              <Upload className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Upload</span>
             </Button>
             <ExportDialog documentContent={documentContent} simulateError={simulateExportError} sourceFormat={sourceFormat || undefined}>
               <Button size="sm" className="bg-foreground text-background hover:bg-foreground/90">
-                <Download className="w-4 h-4 mr-2" />
-                Export
+                <Download className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Export</span>
               </Button>
             </ExportDialog>
             {user && (
@@ -813,10 +730,10 @@ export default function EditorPage() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => setShowClaudeConnect(true)}
+                    onClick={() => setShowWelcomeModal(true)}
                     className="cursor-pointer"
                   >
-                    Account Settings
+                    Open Guide
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -834,12 +751,12 @@ export default function EditorPage() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col lg:flex-row overflow-hidden">
         {/* Main Editor Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0">
           {/* Toolbar */}
-          <div className="border-b border-border px-6 py-2 bg-muted/30">
-            <div className="flex items-center justify-between">
+          <div className="border-b border-border px-3 sm:px-6 py-2 bg-muted/30">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-4">
                 <span className="text-sm text-muted-foreground">Page 1 of 1</span>
               </div>
@@ -883,14 +800,13 @@ export default function EditorPage() {
 
         {/* AI Chat Panel */}
         <AIChat
+          className="lg:shrink-0"
           ref={aiChatRef}
           selectedText={selectedText}
           onSuggestionApply={handleApplySuggestion}
           onUndo={handleUndoChanges}
           onClearSelection={handleClearSelection}
           documentContent={documentContent}
-          apiKey={claudeApiKey || undefined}
-          onConnectClick={() => setShowClaudeConnect(true)}
         />
       </div>
 
@@ -904,13 +820,6 @@ export default function EditorPage() {
         onReset={handleResetVersionHistory}
       />
 
-      <ClaudeConnect
-        isOpen={showClaudeConnect}
-        onClose={() => setShowClaudeConnect(false)}
-        onConnect={handleClaudeConnect}
-        onDisconnect={handleClaudeDisconnect}
-        isConnected={!!claudeApiKey}
-      />
     </div>
   )
 }

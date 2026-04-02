@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { clearUserData } from "@/lib/user-storage"
+import { signOut as supabaseSignOut } from "@/lib/supabase-browser"
 
 export default function LandingPage() {
   const router = useRouter()
@@ -299,10 +300,9 @@ export default function LandingPage() {
   const handleSignOut = async () => {
     setIsSigningOut(true)
     clearUserData()
-    localStorage.removeItem("polish_user")
     sessionStorage.clear()
     setUser(null)
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await supabaseSignOut()
     router.push("/signin")
   }
 
@@ -344,20 +344,19 @@ export default function LandingPage() {
     },
     {
       q: "Is my data secure?",
-      a: "Your API key is stored only in your browser's local storage and is never sent to our servers. Resume content is processed through the Claude API with your own key — we never store or access your documents.",
+      a: "Your resume stays tied to your account/session in the app. We only send the content needed to generate AI suggestions and do not expose server secrets in the browser.",
     },
     {
       q: "Do I need a Claude API key?",
-      a: "Yes. Polish connects directly to the Claude API using your personal Anthropic API key. This gives you full control over usage and costs. Get your key at console.anthropic.com.",
+      a: "No. Claude is already configured for the app, so AI editing works out of the box.",
     },
     {
       q: "Can I use Polish without AI features?",
-      a: "Yes. You can upload, view, and export resumes in multiple formats without connecting an API key. AI editing features activate once you connect your Claude API key.",
+      a: "Yes. You can upload, view, and export resumes in multiple formats without using AI suggestions.",
     },
   ]
 
   return (
-    <>
     <div
       className="min-h-screen relative opacity-100"
       style={{
@@ -540,7 +539,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-20 relative">
           <div className="text-center opacity-90">
             {/* Format badges */}
-            <div className="flex items-center justify-center gap-2 mb-8">
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-8">
               {["PDF", "DOCX", "RTF", "TXT", "LaTeX"].map((fmt) => (
                 <span
                   key={fmt}
@@ -553,7 +552,7 @@ export default function LandingPage() {
 
             <div className="mb-12">
               <h1
-                className={`text-4xl sm:text-5xl lg:text-6xl ${fontWeight} text-balance mb-6 min-h-[160px] flex items-center justify-center transition-all duration-700`}
+                className={`text-4xl sm:text-5xl lg:text-6xl ${fontWeight} text-balance mb-6 min-h-[120px] sm:min-h-[160px] flex items-center justify-center transition-all duration-700`}
               >
                 <span className="bg-gradient-to-r from-slate-800 to-slate-900 bg-clip-text text-transparent">
                   {displayText}
@@ -567,7 +566,7 @@ export default function LandingPage() {
             </p>
 
             {/* Chat preview widget */}
-            <div className="max-w-md mx-auto mb-10 relative">
+            <div className="max-w-md mx-auto mb-10 relative w-full">
               <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden backdrop-blur-xl">
                 <div className="flex items-center justify-between p-3 border-b border-slate-200/50 bg-gradient-to-r from-slate-50/80 to-slate-100/80">
                   <div className="flex items-center gap-3">
@@ -635,7 +634,7 @@ export default function LandingPage() {
 
             {/* CTA buttons */}
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-6">
-              <Link href={user ? "/editor" : "/signin"}>
+              <Link href={user ? "/editor" : "/signup"}>
                 <Button
                   size="lg"
                   className="text-lg px-10 py-6 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold tracking-tight border-0 opacity-100 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
@@ -655,9 +654,7 @@ export default function LandingPage() {
                 Watch Demo
               </Button>
             </div>
-            <p className="text-sm text-slate-600 text-center font-medium">
-              Connected via MCP Server
-            </p>
+            <p className="text-sm text-slate-600 text-center font-medium">AI editing built in</p>
           </div>
         </div>
       </section>
@@ -696,21 +693,23 @@ export default function LandingPage() {
                   setShowChatCaret(false)
                   setScrollPosition(0)
                 }}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                aria-label="Close demo"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
               >
-                <X className="w-5 h-5" />
+                <X className="h-4 w-4" />
+                <span>Close</span>
               </button>
             </div>
 
-            <div className="flex h-[70vh]">
+            <div className="flex flex-col lg:flex-row h-[80vh] lg:h-[70vh]">
               <div
-                className="flex-1 p-6 bg-slate-50 overflow-y-auto"
+                className="flex-1 p-4 sm:p-6 bg-slate-50 overflow-y-auto"
                 style={{
                   transform: `translateY(-${scrollPosition}px)`,
                   transition: isScrolling ? "transform 0.1s ease-out" : "none",
                 }}
               >
-                <div className="bg-white p-8 rounded-lg shadow-sm max-w-2xl mx-auto">
+                <div className="bg-white p-4 sm:p-8 rounded-lg shadow-sm max-w-2xl mx-auto">
                   <div className="text-center mb-6">
                     <h1 className="text-3xl font-bold mb-2">Jake Ryan</h1>
                     <div className="text-sm text-slate-600">
@@ -856,7 +855,7 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="w-80 border-l border-slate-200 flex flex-col">
+              <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col">
                 <div className="p-4 border-b border-slate-200/50">
                   <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-4 py-2">
                     <MessageSquare className="w-4 h-4 text-slate-600" />
@@ -957,7 +956,7 @@ export default function LandingPage() {
               {
                 icon: MessageSquare,
                 title: "Claude AI Editing",
-                desc: "Inline AI suggestions via MCP Server. ATS optimization, proofreading, and more.",
+                desc: "Inline AI suggestions for ATS optimization, proofreading, and more.",
                 index: 1,
                 animatedText: "Bullet improved",
               },
@@ -1027,7 +1026,7 @@ export default function LandingPage() {
               {
                 step: "2",
                 title: "Connect",
-                desc: "Link to Claude via MCP Server to enable AI features.",
+                desc: "AI is already enabled. Start editing right away.",
                 icon: Zap,
               },
               {
@@ -1103,7 +1102,7 @@ export default function LandingPage() {
           <p className="text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
             Upload any format. Edit with Claude AI. Export to anything. All in your browser, all under your control.
           </p>
-          <Link href={user ? "/editor" : "/signin"}>
+          <Link href={user ? "/editor" : "/signup"}>
             <Button
               size="lg"
               className="text-lg px-10 py-6 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold tracking-tight border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
@@ -1137,7 +1136,7 @@ export default function LandingPage() {
               <div className="text-2xl font-bold bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
                 Polish
               </div>
-              <p className="text-xs text-slate-500 mt-1">AI-powered resume editing via MCP Server</p>
+              <p className="text-xs text-slate-500 mt-1">AI-powered resume editing</p>
             </div>
             <div className="flex items-center gap-3">
               {["PDF", "DOCX", "RTF", "TXT", "LaTeX"].map((fmt) => (
@@ -1167,6 +1166,5 @@ export default function LandingPage() {
         }
       `}</style>
     </div>
-    </>
   )
 }

@@ -6,15 +6,15 @@ export async function POST(request: NextRequest) {
   try {
     const { message, selectedText, documentContent } = await request.json()
 
-    // Get API key from header
-    const apiKey = request.headers.get("x-anthropic-key")
+    // Use a single server-side API key (no client-side key entry)
+    const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: "Not connected",
-          message: "Please connect your Claude API key first. Click the 'Connect Claude' button in the toolbar.",
+          error: "AI not configured",
+          message: "AI is not configured on the server. Please set ANTHROPIC_API_KEY in your environment.",
         },
-        { status: 401 },
+        { status: 500 },
       )
     }
 
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "Invalid API key",
-          message: "Your Claude API key appears to be invalid. Please reconnect with a valid key.",
+          message: "The server-side ANTHROPIC_API_KEY appears to be invalid.",
         },
         { status: 401 },
       )

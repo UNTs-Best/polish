@@ -127,9 +127,9 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
   const isModernBullet = t.bulletStyle === "list-none"
 
   return (
-    <div className="flex-1 p-8 overflow-auto bg-muted/20" onMouseUp={onMouseUp}>
+    <div className="flex-1 p-3 sm:p-5 lg:p-8 overflow-auto bg-muted/20" onMouseUp={onMouseUp}>
       <Card
-        className={`max-w-4xl mx-auto min-h-[800px] bg-background shadow-lg select-text cursor-text ${t.fontFamily} ${t.cardStyle}`}
+        className={`max-w-4xl mx-auto min-h-[800px] bg-background shadow-lg select-text cursor-text ${t.fontFamily} ${t.cardStyle} max-sm:p-4`}
       >
         <div className={t.sectionSpacing}>
           {/* Header Section */}
@@ -144,12 +144,12 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
             <h2 className={`${t.headingStyle} ${t.headingBorder} mb-3`}>Education</h2>
             <div className="space-y-3">
               {documentContent.education.map((edu, idx) => (
-                <div key={idx} className="flex justify-between text-sm">
+                <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:justify-between text-sm">
                   <div>
                     <div className="font-semibold text-foreground">{edu.school}</div>
                     <div className="text-muted-foreground">{edu.degree}</div>
                   </div>
-                  <div className="text-right text-muted-foreground">
+                  <div className="text-left sm:text-right text-muted-foreground">
                     <div>{edu.location}</div>
                     <div>{edu.period}</div>
                   </div>
@@ -164,11 +164,11 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
             <div className="space-y-4">
               {documentContent.experience.map((exp, idx) => (
                 <div key={idx}>
-                  <div className="flex justify-between mb-1">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
                     <div className="font-semibold text-foreground">{exp.role}</div>
                     <div className="text-sm text-muted-foreground">{exp.period}</div>
                   </div>
-                  <div className="flex justify-between mb-2">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-2">
                     <div className="text-sm text-muted-foreground italic">{exp.company}</div>
                     <div className="text-sm text-muted-foreground italic">{exp.location}</div>
                   </div>
@@ -199,12 +199,12 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
             <div className="space-y-4">
               {documentContent.projects.map((proj, idx) => (
                 <div key={idx}>
-                  <div className="flex justify-between mb-1">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
                     <div className="font-semibold text-foreground">
                       {proj.name}{" "}
                       <span className={`font-normal ${t.accentColor} text-sm`}>| {proj.tech}</span>
                     </div>
-                    <div className="text-sm text-muted-foreground">{proj.period}</div>
+                    <div className="text-sm text-muted-foreground sm:text-right">{proj.period}</div>
                   </div>
                   <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
                     {proj.bullets.map((bullet, bidx) => (
@@ -234,11 +234,11 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
               <div className="space-y-4">
                 {documentContent.leadership.map((lead, idx) => (
                   <div key={idx}>
-                    <div className="flex justify-between mb-1">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
                       <div className="font-semibold text-foreground">{lead.role}</div>
                       <div className="text-sm text-muted-foreground">{lead.period}</div>
                     </div>
-                    <div className="flex justify-between mb-2">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-2">
                       <div className="text-sm text-muted-foreground italic">{lead.organization}</div>
                       <div className="text-sm text-muted-foreground italic">{lead.location}</div>
                     </div>
@@ -269,7 +269,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
             <h2 className={`${t.headingStyle} ${t.headingBorder} mb-3`}>Technical Skills</h2>
             <div className="text-sm text-foreground/80">
               {template === "modern" ? (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {documentContent.skills.split("|").map((group, idx) => {
                     const [category, ...items] = group.split(":")
                     return (

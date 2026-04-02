@@ -17,9 +17,9 @@ const guideSteps = [
       "Upload your resume as PDF, DOCX, RTF, TXT, or LaTeX. Polish parses it automatically so you can start editing right away.",
   },
   {
-    title: "Connect Claude AI",
+    title: "AI Is Built In",
     description:
-      "Click 'Connect Claude' in the header and enter your Anthropic API key. Once connected, all AI editing features become active.",
+      "AI editing is already enabled for you. Just highlight text or use quick actions and Polish will generate suggestions automatically.",
   },
   {
     title: "Select & Edit with AI",
@@ -80,14 +80,14 @@ export function GuideModal({ open, onOpenChange }: GuideModalProps) {
       >
         <div className="absolute inset-0 bg-gradient-to-br from-white/80 via-transparent to-slate-100/40 pointer-events-none" />
 
-        <div className="relative z-10 p-8">
+        <div className="relative z-10 p-5 sm:p-8">
           {/* Header */}
           <div className="text-center mb-2">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-widest">Guide</span>
           </div>
 
           {/* Content */}
-          <div className="py-8 flex flex-col items-center">
+          <div className="py-5 sm:py-8 flex flex-col items-center">
             <span className="text-xs font-medium text-slate-400 mb-4">
               {currentStep + 1} of {guideSteps.length}
             </span>
@@ -96,7 +96,7 @@ export function GuideModal({ open, onOpenChange }: GuideModalProps) {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between pt-6 border-t border-slate-200/60">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-slate-200/60">
             <div className="flex gap-1.5">
               {guideSteps.map((_, index) => (
                 <button
