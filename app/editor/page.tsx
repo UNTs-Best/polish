@@ -20,6 +20,7 @@ import { FileUpload } from "@/components/file-upload"
 import { EditorWelcomeModal } from "@/components/editor-welcome-modal"
 import { InlinePrompt } from "@/components/inline-prompt"
 import { ResumeRenderer } from "@/components/resume-renderer"
+import { ApiKeySettings, getGeminiApiKey } from "@/components/api-key-settings"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAutosave } from "@/hooks/use-autosave"
@@ -133,6 +134,7 @@ function EditorPageInner() {
   const [isSaving, setIsSaving] = useState(false)
   const [documentId, setDocumentId] = useState<string | null>(null)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [showApiKeySettings, setShowApiKeySettings] = useState(false)
   const [userRole, setUserRole] = useState<string | undefined>()
   const { toast } = useToast()
 
@@ -735,6 +737,12 @@ function EditorPageInner() {
                     {user.email}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setShowApiKeySettings(true)}
+                    className="cursor-pointer"
+                  >
+                    Gemini API Key
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={handleSignOut}
@@ -808,10 +816,13 @@ function EditorPageInner() {
           onClearSelection={handleClearSelection}
           documentContent={documentContent}
           documentId={documentId}
+          geminiApiKey={getGeminiApiKey() || undefined}
         />
       </div>
 
       {showUploadDialog && <FileUpload onFileUpload={handleFileUpload} onClose={() => setShowUploadDialog(false)} />}
+
+      <ApiKeySettings isOpen={showApiKeySettings} onClose={() => setShowApiKeySettings(false)} />
 
       <VersionHistory
         isOpen={showVersionHistory}

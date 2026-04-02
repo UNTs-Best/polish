@@ -2,11 +2,14 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { env } from '../config/env.js'
 import { prisma } from '../config/db.js'
 
-const genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY)
 const MODEL = 'gemini-2.5-flash'
 
-async function generate(prompt: string): Promise<{ text: string; tokens: number }> {
-  const model = genAI.getGenerativeModel({ model: MODEL })
+function getClient(apiKey?: string) {
+  return new GoogleGenerativeAI(apiKey || env.GOOGLE_AI_API_KEY)
+}
+
+async function generate(prompt: string, apiKey?: string): Promise<{ text: string; tokens: number }> {
+  const model = getClient(apiKey).getGenerativeModel({ model: MODEL })
   const result = await model.generateContent(prompt)
   const text = result.response.text()
   const tokens = result.response.usageMetadata?.totalTokenCount ?? 0
@@ -22,7 +25,8 @@ export interface Suggestion {
 
 export async function generateSuggestions(
   content: string,
-  documentType = 'resume'
+  documentType = 'resume',
+  apiKey?: string
 ): Promise<Suggestion[]> {
   const prompt = `You are an expert ${documentType} editor. Analyze the following ${documentType} and return a JSON array of improvement suggestions.
 
@@ -34,7 +38,7 @@ Return ONLY a valid JSON array, no markdown, no extra text.
 Document:
 ${content}`
 
-  const { text } = await generate(prompt)
+  const { text } = await generate(prompt, apiKey)
 
   try {
     const cleaned = text.replace(/```json\n?|\n?```/g, '').trim()
@@ -55,13 +59,13 @@ export async function applySuggestions(
   return updated
 }
 
-export async function summarizeDocument(content: string): Promise<string> {
+export async function summarizeDocument(content: string, apiKey?: string): Promise<string> {
   const prompt = `Summarize the following resume/document in 2-3 concise sentences highlighting the candidate's key strengths and experience. Return only the summary text.
 
 Document:
 ${content}`
 
-  const { text } = await generate(prompt)
+  const { text } = await generate(prompt, apiKey)
   return text.trim()
 }
 
@@ -73,7 +77,8 @@ export interface QualityScore {
 
 export async function scoreDocumentQuality(
   content: string,
-  documentType = 'resume'
+  documentType = 'resume',
+  apiKey?: string
 ): Promise<QualityScore> {
   const prompt = `You are an expert ${documentType} reviewer. Score the following ${documentType} and return a JSON object.
 
@@ -84,7 +89,7 @@ Return ONLY valid JSON, no markdown.
 Document:
 ${content}`
 
-  const { text } = await generate(prompt)
+  const { text } = await generate(prompt, apiKey)
 
   try {
     const cleaned = text.replace(/```json\n?|\n?```/g, '').trim()
@@ -106,7 +111,8 @@ export interface ChatResponse {
 export async function chatWithDocument(
   userMessage: string,
   documentContent: string,
-  selectedText?: string
+  selectedText?: string,
+  apiKey?: string
 ): Promise<ChatResponse> {
   const contextPart = selectedText
     ? `\nThe user has highlighted this specific text: "${selectedText}"\n`
@@ -132,7 +138,7 @@ Respond helpfully and concisely. If you are making specific text changes, includ
 
 Only include the <changes> block if you have concrete text replacements. For general questions or analysis, respond without it.`
 
-  const { text, tokens: _tokens } = await generate(prompt)
+  const { text, tokens: _tokens } = await generate(prompt, apiKey)
 
   const changesMatch = text.match(/<changes>([\s\S]*?)<\/changes>/)
   const messageText = text.replace(/<changes>[\s\S]*?<\/changes>/, '').trim()
