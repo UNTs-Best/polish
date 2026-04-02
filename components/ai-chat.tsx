@@ -47,7 +47,6 @@ interface AIChatProps {
   onSuggestionApply?: (changes: SuggestedChanges) => void
   onUndo?: () => void
   onClearSelection?: () => void
-  simulateError?: boolean
   documentContent?: DocumentContent
   className?: string
   autoReformat?: boolean
@@ -67,7 +66,7 @@ const QUICK_ACTIONS_BLANK = [
 ]
 
 export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) => void }, AIChatProps>(function AIChat(
-  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent, className, autoReformat },
+  { selectedText, onSuggestionApply, onUndo, onClearSelection, documentContent, className, autoReformat },
   ref,
 ) {
   const isResumeBlank = !documentContent?.name?.trim() &&
@@ -108,12 +107,10 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
     }
   }, [selectedText])
 
-  // Auto-trigger reformat when "Upload & polish" was selected
   const autoReformatTriggered = useRef(false)
   useEffect(() => {
     if (autoReformat && !autoReformatTriggered.current && !isResumeBlank) {
       autoReformatTriggered.current = true
-      // Small delay to ensure component is fully mounted
       const timer = setTimeout(() => {
         handleSendMessage("Completely reformat and improve my entire resume. Rewrite all bullet points with strong action verbs and quantified achievements. Improve the formatting, make it ATS-optimized and professional. Return the full improved resume.")
       }, 600)
@@ -271,7 +268,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
     >
       <div ref={liveRegionRef} className="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
-      {/* Header */}
       <div className="border-b border-slate-200/60 p-4 bg-white/80 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -304,7 +300,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         </div>
       </div>
 
-      {/* Quick Actions */}
       {messages.length <= 2 && !isLoading && (
         <div className="px-4 pt-3 pb-1">
           <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">
@@ -324,7 +319,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         </div>
       )}
 
-      {/* Chat Messages */}
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {messages.map((message, index) => (
           <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -468,7 +462,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
       <div className="p-4 bg-white/80 backdrop-blur-sm border-t border-slate-200/60">
         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-2">
           <input

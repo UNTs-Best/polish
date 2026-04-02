@@ -5,7 +5,6 @@ export async function POST(request: NextRequest) {
   try {
     const { message, selectedText, documentContent } = await request.json()
 
-    // Use a single server-side API key (no client-side key entry)
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return NextResponse.json(
@@ -21,7 +20,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
     }
 
-    // Create Claude client and chat
     const client = createClaudeClient(apiKey)
     const result = await chatWithTools(
       client,
@@ -35,7 +33,6 @@ export async function POST(request: NextRequest) {
     console.error("Chat API error:", error)
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
 
-    // Handle specific Anthropic API errors
     if (errorMessage.includes("401") || errorMessage.includes("authentication")) {
       return NextResponse.json(
         {

@@ -8,7 +8,6 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "Polish - AI-Powered Resume Editor",
   description: "The all-in-one platform to edit your resumes visually — powered by AI.",
-  generator: "v0.app",
 }
 
 export default function RootLayout({

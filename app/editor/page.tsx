@@ -100,9 +100,8 @@ function loadFromLocalStorage(
     try {
       const parsed = JSON.parse(savedDoc)
       setDocumentContent(parsed)
-      console.log("[v0] Loaded saved document from localStorage")
     } catch (error) {
-      console.error("[v0] Failed to load saved document:", error)
+      console.error("Failed to load saved document:", error)
     }
   }
 
@@ -110,9 +109,8 @@ function loadFromLocalStorage(
     try {
       const parsed = JSON.parse(savedVersions)
       setDocumentVersions(parsed)
-      console.log("[v0] Loaded version history from localStorage")
     } catch (error) {
-      console.error("[v0] Failed to load version history:", error)
+      console.error("Failed to load version history:", error)
     }
   }
 }
@@ -121,7 +119,6 @@ export default function EditorPage() {
   const router = useRouter()
   const [user, setUser] = useState<{ email: string; name: string } | null>(null)
   const [selectedText, setSelectedText] = useState("")
-  const [simulateExportError] = useState(false)
   const [showUploadDialog, setShowUploadDialog] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([])
@@ -136,8 +133,6 @@ export default function EditorPage() {
   const [autoReformat, setAutoReformat] = useState(false)
   const { toast } = useToast()
 
-  // Claude connection state
-  // Source format state (from uploaded file)
   const [sourceFormat, setSourceFormat] = useState<FormatLabel | null>(null)
 
   const blankDocument: DocumentContent = {
@@ -379,7 +374,7 @@ export default function EditorPage() {
       }
       setLastSavedAt(new Date())
     } catch (error) {
-      console.error("[v0] Autosave failed:", error)
+      console.error("Autosave failed:", error)
       toast({
         title: "Save Error",
         description: "Failed to save. Your changes are stored locally.",
@@ -410,9 +405,6 @@ export default function EditorPage() {
       content: { ...documentContent },
     }
     setDocumentVersions((prev) => [newVersion, ...prev])
-    console.log("[v0] Created version snapshot:", newVersion.id)
-
-    // Version snapshots are stored in localStorage via the versions state effect below
   }
 
   useEffect(() => {
@@ -433,8 +425,6 @@ export default function EditorPage() {
   }, [])
 
   const handleApplySuggestion = (changes: SuggestedChanges) => {
-    console.log("[v0] Applying changes:", changes)
-
     setOriginalDocumentContent({ ...documentContent })
 
     const newPendingChanges: PendingChange[] = (changes.changes || []).map((change, idx) => ({
@@ -716,7 +706,6 @@ export default function EditorPage() {
     setPendingChanges([])
     setShowPendingChanges(false)
     createVersionSnapshot("Applied AI suggestions")
-    console.log("[v0] Changes accepted and applied permanently")
   }
 
   const handleUndoChanges = () => {
@@ -727,7 +716,6 @@ export default function EditorPage() {
     setPendingChanges([])
     setShowPendingChanges(false)
     createVersionSnapshot("Reverted changes")
-    console.log("[v0] Changes reverted to original state")
   }
 
   const isTextHighlighted = (text: string): boolean => {
@@ -766,27 +754,20 @@ export default function EditorPage() {
     if (version.content) {
       setDocumentContent(version.content)
       await createVersionSnapshot(`Restored to: ${version.description}`)
-      console.log("[v0] Restored version:", version.id)
     }
   }
 
   const handleResetVersionHistory = async () => {
     try {
-      // Clear localStorage
       localStorage.removeItem("polishEditor_versions")
-      console.log("[v0] Cleared version history from localStorage")
-
-      // Set to empty array - no versions at all
       setDocumentVersions([])
 
       toast({
         title: "Version History Cleared",
         description: "All version history has been permanently deleted.",
       })
-
-      console.log("[v0] Version history completely cleared")
     } catch (error) {
-      console.error("[v0] Error resetting version history:", error)
+      console.error("Error resetting version history:", error)
       toast({
         title: "Reset Failed",
         description: "Failed to reset version history. Please try again.",
@@ -828,7 +809,6 @@ export default function EditorPage() {
   useEffect(() => { documentContentRef.current = documentContent }, [documentContent])
   useEffect(() => { documentVersionsRef.current = documentVersions }, [documentVersions])
 
-  // Save to localStorage + trigger Supabase sync on page close
   useEffect(() => {
     const handleBeforeUnload = () => {
       setUserItem("polishEditor_document", JSON.stringify(documentContentRef.current))
@@ -840,7 +820,6 @@ export default function EditorPage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload)
   }, [triggerSave])
 
-  // Save to localStorage + trigger Supabase sync on SPA navigation away (unmount only)
   useEffect(() => {
     return () => {
       setUserItem("polishEditor_document", JSON.stringify(documentContentRef.current))
@@ -852,11 +831,9 @@ export default function EditorPage() {
 
   const handleClearSelection = () => {
     setSelectedText("")
-    // Also clear the browser's text selection
     window.getSelection()?.removeAllRanges()
   }
 
-  // Handler for mouse up to capture text selection from the resume
   const handleMouseUp = (_e: React.MouseEvent) => {
     const selection = window.getSelection()
     if (selection && selection.toString().trim()) {
@@ -868,19 +845,15 @@ export default function EditorPage() {
       const rect = range.getBoundingClientRect()
 
       setSelectionPosition({
-        x: rect.left + rect.width / 2 - 160, // Center the popup
+        x: rect.left + rect.width / 2 - 160,
         y: rect.bottom,
       })
       setShowInlinePrompt(true)
-    } else {
-      // Don't close immediately - let click outside handle it
     }
   }
 
   const handleInlinePromptSubmit = (prompt: string, text: string) => {
     setShowInlinePrompt(false)
-    // The AI chat will receive the selectedText and handle the request
-    // We trigger the chat by updating selection and letting the chat handle it
     if (aiChatRef.current) {
       aiChatRef.current.sendMessage(prompt, text)
     }
@@ -933,7 +906,7 @@ export default function EditorPage() {
               <Upload className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">Upload</span>
             </Button>
-            <ExportDialog documentContent={documentContent} simulateError={simulateExportError} sourceFormat={sourceFormat || undefined}>
+            <ExportDialog documentContent={documentContent} sourceFormat={sourceFormat || undefined}>
               <Button size="sm" className="bg-foreground text-background hover:bg-foreground/90">
                 <Download className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Export</span>
@@ -988,9 +961,7 @@ export default function EditorPage() {
       </header>
 
       <div className="flex flex-1 flex-col lg:flex-row overflow-hidden">
-        {/* Main Editor Area */}
         <div className="flex-1 flex flex-col min-h-0">
-          {/* Toolbar */}
           <div className="border-b border-border px-3 sm:px-6 py-2 bg-muted/30">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-4">
@@ -1015,7 +986,6 @@ export default function EditorPage() {
             </div>
           </div>
 
-          {/* Resume Renderer */}
           <ResumeRenderer
             documentContent={documentContent}
             template="classic"
@@ -1024,7 +994,6 @@ export default function EditorPage() {
             onContentChange={setDocumentContent}
           />
 
-          {/* Inline Prompt Component */}
           {showInlinePrompt && selectedText && (
             <InlinePrompt
               selectedText={selectedText}
@@ -1035,7 +1004,6 @@ export default function EditorPage() {
           )}
         </div>
 
-        {/* AI Chat Panel */}
         <AIChat
           className="lg:shrink-0"
           ref={aiChatRef}

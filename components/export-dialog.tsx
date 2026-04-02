@@ -35,7 +35,6 @@ const hasLeadership = (lead: NonNullable<DocumentContent["leadership"]>[0]) => h
 interface ExportDialogProps {
   children: React.ReactNode
   documentContent?: DocumentContent
-  simulateError?: boolean
   sourceFormat?: string
 }
 
@@ -556,7 +555,7 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export function ExportDialog({ children, documentContent, simulateError, sourceFormat }: ExportDialogProps) {
+export function ExportDialog({ children, documentContent, sourceFormat }: ExportDialogProps) {
   const [isExporting, setIsExporting] = useState(false)
   const [exportSuccess, setExportSuccess] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -623,14 +622,6 @@ export function ExportDialog({ children, documentContent, simulateError, sourceF
     setIsExporting(true)
     setExportSuccess(null)
     setExportError(null)
-
-    if (simulateError) {
-      setTimeout(() => {
-        setIsExporting(false)
-        setExportError(format)
-      }, 1500)
-      return
-    }
 
     try {
       const doc = documentContent || defaultDoc

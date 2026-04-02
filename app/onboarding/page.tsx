@@ -93,7 +93,6 @@ export default function OnboardingPage() {
       // Parse the document
       const parsed = await parseDocument(file)
 
-      // Convert to structured resume content
       const resumeContent = parseResumeText(parsed.text)
 
       setData((prev) => ({
@@ -103,7 +102,7 @@ export default function OnboardingPage() {
         parsedContent: resumeContent,
       }))
     } catch (error) {
-      console.error("[v0] File parsing error:", error)
+      console.error("File parsing error:", error)
       setParseError(error instanceof Error ? error.message : "Failed to parse file")
       setData((prev) => ({
         ...prev,

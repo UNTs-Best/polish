@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 
 export function createClaudeClient(apiKey: string) {
-  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+  return new Anthropic({ apiKey })
 }
 
 export interface DocumentContent {
@@ -246,7 +246,6 @@ CRITICAL RULES:
     }
   }
 
-  // Remove the raw suggestion block from the displayed message
   const cleanMessage = text.replace(/```suggestion\n[\s\S]*?```/, "").trim()
 
   return {

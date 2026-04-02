@@ -24,7 +24,7 @@ export function useAutosave({ delay = 3000, onSave, enabled = true }: UseAutosav
     try {
       await onSaveRef.current()
     } catch (error) {
-      console.error("[v0] Autosave error:", error)
+      console.error("Autosave error:", error)
     } finally {
       isSavingRef.current = false
     }
