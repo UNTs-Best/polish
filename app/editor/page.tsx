@@ -120,7 +120,7 @@ function EditorPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const docId = searchParams.get("id")
-  const [user, setUser] = useState<{ email: string; name: string } | null>(null)
+  const [user, setUser] = useState<{ email: string; firstName?: string; name?: string } | null>(null)
   const [selectedText, setSelectedText] = useState("")
   const [simulateExportError] = useState(false)
   const [showUploadDialog, setShowUploadDialog] = useState(false)
@@ -725,7 +725,7 @@ function EditorPageInner() {
                   >
                     <User className="w-4 h-4" />
                     <span className="max-w-[120px] truncate">
-                      {isSigningOut ? "Signing out..." : user.name}
+                      {isSigningOut ? "Signing out..." : (user.firstName || user.name || user.email)}
                     </span>
                     <ChevronDown className="w-3 h-3" />
                   </Button>
