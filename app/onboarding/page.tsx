@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button"
 import { ArrowRight, ChevronLeft, Upload, FileText, Check, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { setUserItem } from "@/lib/user-storage"
+import { setUserItem, getAccessToken } from "@/lib/user-storage"
 import { parseDocument, parseResumeText } from "@/lib/document-parser"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 interface OnboardingData {
   targetRole: string
@@ -100,24 +102,40 @@ export default function OnboardingPage() {
     fileInputRef.current?.click()
   }
 
-  const handleNext = () => {
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleNext = async () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep((prev) => prev + 1)
-    } else {
+      return
+    }
+
+    const token = getAccessToken()
+    if (!token) {
+      router.replace("/signin")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const content = data.parsedContent ? JSON.stringify(data.parsedContent) : ""
+      const title = data.targetRole
+        ? `${data.targetRole} Resume`
+        : data.uploadedFile?.name?.replace(/\.[^/.]+$/, "") ?? "My Resume"
+
+      const res = await fetch(`${API_URL}/api/docs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title, content, documentType: "resume" }),
+      })
+
+      if (!res.ok) throw new Error("Failed to create document")
+
+      const { document: doc } = await res.json()
       setUserItem("polish_target_role", data.targetRole)
-      setUserItem("polish_onboarding", JSON.stringify(data))
-
-      // Save parsed content for editor to load
-      if (data.parsedContent) {
-        setUserItem("polish_uploaded_content", JSON.stringify(data.parsedContent))
-        setUserItem("polish_uploaded_filename", data.uploadedFile?.name || "")
-      } else {
-        // Clear any previous uploaded content if starting fresh
-        setUserItem("polish_uploaded_content", "")
-        setUserItem("polish_uploaded_filename", "")
-      }
-
-      router.push("/editor")
+      router.push(`/editor?id=${doc.id}`)
+    } catch {
+      setIsSubmitting(false)
     }
   }
 
@@ -335,11 +353,11 @@ export default function OnboardingPage() {
 
             <Button
               onClick={handleNext}
-              disabled={!canProceed()}
+              disabled={!canProceed() || isSubmitting}
               className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg"
             >
-              {currentStep === steps.length - 1 ? "Start" : "Next"}
-              <ArrowRight className="w-4 h-4 ml-1" />
+              {isSubmitting ? "Creating..." : currentStep === steps.length - 1 ? "Start" : "Next"}
+              {!isSubmitting && <ArrowRight className="w-4 h-4 ml-1" />}
             </Button>
           </div>
         </div>
