@@ -232,7 +232,6 @@ function EditorPageInner() {
     localStorage.removeItem("polish_user")
     sessionStorage.clear()
     // Reset local state
-    setClaudeApiKey(null)
     setUser(null)
     // Brief delay so the user sees the "Signing out..." state
     await new Promise((resolve) => setTimeout(resolve, 500))
