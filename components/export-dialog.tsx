@@ -24,6 +24,14 @@ interface DocumentContent {
   skills: string
 }
 
+// Filter helpers to skip empty content
+const hasText = (s?: string) => !!s?.trim()
+const nonEmptyBullets = (bullets: string[]) => bullets.filter((b) => hasText(b))
+const hasEducation = (edu: DocumentContent["education"][0]) => hasText(edu.school) || hasText(edu.degree)
+const hasExperience = (exp: DocumentContent["experience"][0]) => hasText(exp.role) || hasText(exp.company)
+const hasProject = (proj: DocumentContent["projects"][0]) => hasText(proj.name)
+const hasLeadership = (lead: NonNullable<DocumentContent["leadership"]>[0]) => hasText(lead.role) || hasText(lead.organization)
+
 interface ExportDialogProps {
   children: React.ReactNode
   documentContent?: DocumentContent
@@ -40,6 +48,9 @@ async function generatePdf(doc: DocumentContent): Promise<Blob> {
   const contentWidth = pageWidth - margin * 2
   let y = 50
 
+  // Use a generous line height factor to prevent overlapping characters
+  pdf.setLineHeightFactor(1.5)
+
   const checkPage = (needed: number) => {
     if (y + needed > pdf.internal.pageSize.getHeight() - 40) {
       pdf.addPage()
@@ -51,88 +62,95 @@ async function generatePdf(doc: DocumentContent): Promise<Blob> {
   pdf.setFont("helvetica", "bold")
   pdf.setFontSize(20)
   pdf.text(doc.name, pageWidth / 2, y, { align: "center" })
-  y += 18
+  y += 24
   if (doc.title) {
     pdf.setFont("helvetica", "normal")
     pdf.setFontSize(10)
     pdf.text(doc.title, pageWidth / 2, y, { align: "center" })
-    y += 14
+    y += 16
   }
   if (doc.contact) {
     pdf.setFont("helvetica", "normal")
     pdf.setFontSize(9)
     pdf.text(doc.contact, pageWidth / 2, y, { align: "center" })
-    y += 14
+    y += 16
   }
 
   // Horizontal rule
   pdf.setDrawColor(0)
   pdf.setLineWidth(0.75)
   pdf.line(margin, y, pageWidth - margin, y)
-  y += 16
+  y += 18
 
   const drawSectionHeading = (title: string) => {
     checkPage(30)
     pdf.setFont("helvetica", "bold")
     pdf.setFontSize(11)
     pdf.text(title.toUpperCase(), margin, y)
-    y += 3
+    y += 4
     pdf.setDrawColor(0)
     pdf.setLineWidth(0.5)
     pdf.line(margin, y, pageWidth - margin, y)
-    y += 14
+    y += 16
   }
 
   const drawEntryHeader = (left: string, right: string, bold = true) => {
-    checkPage(16)
+    checkPage(18)
     pdf.setFont("helvetica", bold ? "bold" : "normal")
     pdf.setFontSize(10)
     pdf.text(left, margin, y)
     pdf.setFont("helvetica", "normal")
     pdf.setFontSize(9)
     pdf.text(right, pageWidth - margin, y, { align: "right" })
-    y += 13
+    y += 15
   }
 
   const drawSubHeader = (left: string, right: string) => {
-    checkPage(14)
+    checkPage(16)
     pdf.setFont("helvetica", "italic")
     pdf.setFontSize(9)
     pdf.text(left, margin, y)
     pdf.text(right, pageWidth - margin, y, { align: "right" })
-    y += 12
+    y += 14
   }
 
   const drawBullet = (text: string) => {
-    checkPage(14)
     pdf.setFont("helvetica", "normal")
     pdf.setFontSize(9)
     const bulletX = margin + 8
     const textX = margin + 16
     const maxWidth = contentWidth - 16
     const lines = pdf.splitTextToSize(text, maxWidth)
+    const lineHeight = pdf.getLineHeight() / pdf.internal.scaleFactor
+    const blockHeight = lines.length * lineHeight
+    checkPage(blockHeight)
     pdf.text("•", bulletX, y)
-    pdf.text(lines, textX, y)
-    y += lines.length * 12
+    // Render each line individually for consistent spacing
+    for (let i = 0; i < lines.length; i++) {
+      pdf.text(lines[i], textX, y + i * lineHeight)
+    }
+    y += blockHeight
   }
 
   // Education
-  if (doc.education?.length) {
+  const validEducation = doc.education?.filter(hasEducation) ?? []
+  if (validEducation.length) {
     drawSectionHeading("Education")
-    for (const edu of doc.education) {
-      if (edu.school) drawEntryHeader(edu.school, edu.location || "")
-      if (edu.degree) drawSubHeader(edu.degree, edu.period || "")
+    for (const edu of validEducation) {
+      if (hasText(edu.school)) drawEntryHeader(edu.school, edu.location || "")
+      if (hasText(edu.degree)) drawSubHeader(edu.degree, edu.period || "")
     }
     y += 4
   }
 
   // Experience
-  if (doc.experience?.length) {
+  const validExperience = doc.experience?.filter(hasExperience) ?? []
+  if (validExperience.length) {
     drawSectionHeading("Experience")
-    for (const exp of doc.experience) {
-      drawEntryHeader(exp.role, exp.period || "")
-      if (exp.company) drawSubHeader(exp.company, exp.location || "")
-      for (const bullet of exp.bullets) {
+    for (const exp of validExperience) {
+      if (hasText(exp.role)) drawEntryHeader(exp.role, exp.period || "")
+      if (hasText(exp.company)) drawSubHeader(exp.company, exp.location || "")
+      for (const bullet of nonEmptyBullets(exp.bullets)) {
         drawBullet(bullet)
       }
       y += 4
@@ -140,12 +158,13 @@ async function generatePdf(doc: DocumentContent): Promise<Blob> {
   }
 
   // Projects
-  if (doc.projects?.length) {
+  const validProjects = doc.projects?.filter(hasProject) ?? []
+  if (validProjects.length) {
     drawSectionHeading("Projects")
-    for (const proj of doc.projects) {
+    for (const proj of validProjects) {
       const projTitle = proj.tech ? `${proj.name} | ${proj.tech}` : proj.name
       drawEntryHeader(projTitle, proj.period || "")
-      for (const bullet of proj.bullets) {
+      for (const bullet of nonEmptyBullets(proj.bullets)) {
         drawBullet(bullet)
       }
       y += 4
@@ -153,12 +172,13 @@ async function generatePdf(doc: DocumentContent): Promise<Blob> {
   }
 
   // Leadership
-  if (doc.leadership?.length) {
+  const validLeadership = doc.leadership?.filter(hasLeadership) ?? []
+  if (validLeadership.length) {
     drawSectionHeading("Leadership")
-    for (const lead of doc.leadership) {
-      drawEntryHeader(lead.role, lead.period || "")
-      if (lead.organization) drawSubHeader(lead.organization, lead.location || "")
-      for (const bullet of lead.bullets) {
+    for (const lead of validLeadership) {
+      if (hasText(lead.role)) drawEntryHeader(lead.role, lead.period || "")
+      if (hasText(lead.organization)) drawSubHeader(lead.organization, lead.location || "")
+      for (const bullet of nonEmptyBullets(lead.bullets)) {
         drawBullet(bullet)
       }
       y += 4
@@ -166,14 +186,18 @@ async function generatePdf(doc: DocumentContent): Promise<Blob> {
   }
 
   // Skills
-  if (doc.skills) {
+  if (hasText(doc.skills)) {
     drawSectionHeading("Technical Skills")
-    checkPage(20)
     pdf.setFont("helvetica", "normal")
     pdf.setFontSize(9)
     const skillLines = pdf.splitTextToSize(doc.skills.replace(/\|/g, "  |  "), contentWidth)
-    pdf.text(skillLines, margin, y)
-    y += skillLines.length * 12
+    const skillLineHeight = pdf.getLineHeight() / pdf.internal.scaleFactor
+    const skillBlockHeight = skillLines.length * skillLineHeight
+    checkPage(skillBlockHeight)
+    for (let i = 0; i < skillLines.length; i++) {
+      pdf.text(skillLines[i], margin, y + i * skillLineHeight)
+    }
+    y += skillBlockHeight
   }
 
   return pdf.output("blob")
@@ -182,50 +206,54 @@ async function generatePdf(doc: DocumentContent): Promise<Blob> {
 // Generate plain text
 function generateTxt(doc: DocumentContent): string {
   const lines: string[] = []
-  lines.push(doc.name)
-  if (doc.title) lines.push(doc.title)
-  if (doc.contact) lines.push(doc.contact)
+  if (hasText(doc.name)) lines.push(doc.name)
+  if (hasText(doc.title)) lines.push(doc.title)
+  if (hasText(doc.contact)) lines.push(doc.contact)
   lines.push("", "=".repeat(60), "")
 
-  if (doc.education?.length) {
+  const tValidEducation = doc.education?.filter(hasEducation) ?? []
+  if (tValidEducation.length) {
     lines.push("EDUCATION", "-".repeat(40))
-    for (const edu of doc.education) {
-      if (edu.school) lines.push(`${edu.school}${edu.location ? "  |  " + edu.location : ""}`)
-      if (edu.degree) lines.push(`${edu.degree}${edu.period ? "  |  " + edu.period : ""}`)
+    for (const edu of tValidEducation) {
+      if (hasText(edu.school)) lines.push(`${edu.school}${hasText(edu.location) ? "  |  " + edu.location : ""}`)
+      if (hasText(edu.degree)) lines.push(`${edu.degree}${hasText(edu.period) ? "  |  " + edu.period : ""}`)
       lines.push("")
     }
   }
 
-  if (doc.experience?.length) {
+  const tValidExperience = doc.experience?.filter(hasExperience) ?? []
+  if (tValidExperience.length) {
     lines.push("EXPERIENCE", "-".repeat(40))
-    for (const exp of doc.experience) {
-      lines.push(`${exp.role}${exp.period ? "  |  " + exp.period : ""}`)
-      if (exp.company) lines.push(`${exp.company}${exp.location ? "  |  " + exp.location : ""}`)
-      for (const bullet of exp.bullets) lines.push(`  • ${bullet}`)
+    for (const exp of tValidExperience) {
+      if (hasText(exp.role)) lines.push(`${exp.role}${hasText(exp.period) ? "  |  " + exp.period : ""}`)
+      if (hasText(exp.company)) lines.push(`${exp.company}${hasText(exp.location) ? "  |  " + exp.location : ""}`)
+      for (const bullet of nonEmptyBullets(exp.bullets)) lines.push(`  • ${bullet}`)
       lines.push("")
     }
   }
 
-  if (doc.projects?.length) {
+  const tValidProjects = doc.projects?.filter(hasProject) ?? []
+  if (tValidProjects.length) {
     lines.push("PROJECTS", "-".repeat(40))
-    for (const proj of doc.projects) {
-      lines.push(`${proj.name}${proj.tech ? " | " + proj.tech : ""}${proj.period ? "  |  " + proj.period : ""}`)
-      for (const bullet of proj.bullets) lines.push(`  • ${bullet}`)
+    for (const proj of tValidProjects) {
+      lines.push(`${proj.name}${hasText(proj.tech) ? " | " + proj.tech : ""}${hasText(proj.period) ? "  |  " + proj.period : ""}`)
+      for (const bullet of nonEmptyBullets(proj.bullets)) lines.push(`  • ${bullet}`)
       lines.push("")
     }
   }
 
-  if (doc.leadership?.length) {
+  const tValidLeadership = doc.leadership?.filter(hasLeadership) ?? []
+  if (tValidLeadership.length) {
     lines.push("LEADERSHIP", "-".repeat(40))
-    for (const lead of doc.leadership) {
-      lines.push(`${lead.role}${lead.period ? "  |  " + lead.period : ""}`)
-      if (lead.organization) lines.push(`${lead.organization}${lead.location ? "  |  " + lead.location : ""}`)
-      for (const bullet of lead.bullets) lines.push(`  • ${bullet}`)
+    for (const lead of tValidLeadership) {
+      if (hasText(lead.role)) lines.push(`${lead.role}${hasText(lead.period) ? "  |  " + lead.period : ""}`)
+      if (hasText(lead.organization)) lines.push(`${lead.organization}${hasText(lead.location) ? "  |  " + lead.location : ""}`)
+      for (const bullet of nonEmptyBullets(lead.bullets)) lines.push(`  • ${bullet}`)
       lines.push("")
     }
   }
 
-  if (doc.skills) {
+  if (hasText(doc.skills)) {
     lines.push("TECHNICAL SKILLS", "-".repeat(40))
     lines.push(doc.skills)
   }
@@ -253,57 +281,64 @@ function generateLatex(doc: DocumentContent): string {
   lines.push(`\\end{center}`)
   lines.push("")
 
-  if (doc.education?.length) {
+  const lValidEducation = doc.education?.filter(hasEducation) ?? []
+  if (lValidEducation.length) {
     lines.push("\\section*{Education}")
-    for (const edu of doc.education) {
-      if (edu.school) lines.push(`\\textbf{${esc(edu.school)}} \\hfill ${esc(edu.location || "")}\\\\`)
-      if (edu.degree) lines.push(`\\textit{${esc(edu.degree)}} \\hfill ${esc(edu.period || "")}\\\\[4pt]`)
+    for (const edu of lValidEducation) {
+      if (hasText(edu.school)) lines.push(`\\textbf{${esc(edu.school)}} \\hfill ${esc(edu.location || "")}\\\\`)
+      if (hasText(edu.degree)) lines.push(`\\textit{${esc(edu.degree)}} \\hfill ${esc(edu.period || "")}\\\\[4pt]`)
     }
   }
 
-  if (doc.experience?.length) {
+  const lValidExperience = doc.experience?.filter(hasExperience) ?? []
+  if (lValidExperience.length) {
     lines.push("\\section*{Experience}")
-    for (const exp of doc.experience) {
-      lines.push(`\\textbf{${esc(exp.role)}} \\hfill ${esc(exp.period || "")}\\\\`)
-      if (exp.company) lines.push(`\\textit{${esc(exp.company)}} \\hfill \\textit{${esc(exp.location || "")}}\\\\`)
-      if (exp.bullets.length) {
+    for (const exp of lValidExperience) {
+      if (hasText(exp.role)) lines.push(`\\textbf{${esc(exp.role)}} \\hfill ${esc(exp.period || "")}\\\\`)
+      if (hasText(exp.company)) lines.push(`\\textit{${esc(exp.company)}} \\hfill \\textit{${esc(exp.location || "")}}\\\\`)
+      const bullets = nonEmptyBullets(exp.bullets)
+      if (bullets.length) {
         lines.push("\\begin{itemize}[leftmargin=1.5em,nosep]")
-        for (const b of exp.bullets) lines.push(`  \\item ${esc(b)}`)
+        for (const b of bullets) lines.push(`  \\item ${esc(b)}`)
         lines.push("\\end{itemize}")
       }
       lines.push("")
     }
   }
 
-  if (doc.projects?.length) {
+  const lValidProjects = doc.projects?.filter(hasProject) ?? []
+  if (lValidProjects.length) {
     lines.push("\\section*{Projects}")
-    for (const proj of doc.projects) {
-      const title = proj.tech ? `${esc(proj.name)} | \\textit{${esc(proj.tech)}}` : esc(proj.name)
+    for (const proj of lValidProjects) {
+      const title = hasText(proj.tech) ? `${esc(proj.name)} | \\textit{${esc(proj.tech)}}` : esc(proj.name)
       lines.push(`\\textbf{${title}} \\hfill ${esc(proj.period || "")}\\\\`)
-      if (proj.bullets.length) {
+      const bullets = nonEmptyBullets(proj.bullets)
+      if (bullets.length) {
         lines.push("\\begin{itemize}[leftmargin=1.5em,nosep]")
-        for (const b of proj.bullets) lines.push(`  \\item ${esc(b)}`)
+        for (const b of bullets) lines.push(`  \\item ${esc(b)}`)
         lines.push("\\end{itemize}")
       }
       lines.push("")
     }
   }
 
-  if (doc.leadership?.length) {
+  const lValidLeadership = doc.leadership?.filter(hasLeadership) ?? []
+  if (lValidLeadership.length) {
     lines.push("\\section*{Leadership}")
-    for (const lead of doc.leadership) {
-      lines.push(`\\textbf{${esc(lead.role)}} \\hfill ${esc(lead.period || "")}\\\\`)
-      if (lead.organization) lines.push(`\\textit{${esc(lead.organization)}} \\hfill \\textit{${esc(lead.location || "")}}\\\\`)
-      if (lead.bullets.length) {
+    for (const lead of lValidLeadership) {
+      if (hasText(lead.role)) lines.push(`\\textbf{${esc(lead.role)}} \\hfill ${esc(lead.period || "")}\\\\`)
+      if (hasText(lead.organization)) lines.push(`\\textit{${esc(lead.organization)}} \\hfill \\textit{${esc(lead.location || "")}}\\\\`)
+      const bullets = nonEmptyBullets(lead.bullets)
+      if (bullets.length) {
         lines.push("\\begin{itemize}[leftmargin=1.5em,nosep]")
-        for (const b of lead.bullets) lines.push(`  \\item ${esc(b)}`)
+        for (const b of bullets) lines.push(`  \\item ${esc(b)}`)
         lines.push("\\end{itemize}")
       }
       lines.push("")
     }
   }
 
-  if (doc.skills) {
+  if (hasText(doc.skills)) {
     lines.push("\\section*{Technical Skills}")
     lines.push(esc(doc.skills))
   }
@@ -384,46 +419,50 @@ async function generateDocx(doc: DocumentContent): Promise<Blob> {
     })
 
   // Education
-  if (doc.education?.length) {
+  const dValidEducation = doc.education?.filter(hasEducation) ?? []
+  if (dValidEducation.length) {
     children.push(sectionHeading("Education"))
-    for (const edu of doc.education) {
-      if (edu.school) children.push(entryHeader(edu.school, edu.location || ""))
-      if (edu.degree) children.push(subHeader(edu.degree, edu.period || ""))
+    for (const edu of dValidEducation) {
+      if (hasText(edu.school)) children.push(entryHeader(edu.school, edu.location || ""))
+      if (hasText(edu.degree)) children.push(subHeader(edu.degree, edu.period || ""))
     }
   }
 
   // Experience
-  if (doc.experience?.length) {
+  const dValidExperience = doc.experience?.filter(hasExperience) ?? []
+  if (dValidExperience.length) {
     children.push(sectionHeading("Experience"))
-    for (const exp of doc.experience) {
-      children.push(entryHeader(exp.role, exp.period || ""))
-      if (exp.company) children.push(subHeader(exp.company, exp.location || ""))
-      for (const b of exp.bullets) children.push(bullet(b))
+    for (const exp of dValidExperience) {
+      if (hasText(exp.role)) children.push(entryHeader(exp.role, exp.period || ""))
+      if (hasText(exp.company)) children.push(subHeader(exp.company, exp.location || ""))
+      for (const b of nonEmptyBullets(exp.bullets)) children.push(bullet(b))
     }
   }
 
   // Projects
-  if (doc.projects?.length) {
+  const dValidProjects = doc.projects?.filter(hasProject) ?? []
+  if (dValidProjects.length) {
     children.push(sectionHeading("Projects"))
-    for (const proj of doc.projects) {
+    for (const proj of dValidProjects) {
       const projTitle = proj.tech ? `${proj.name} | ${proj.tech}` : proj.name
       children.push(entryHeader(projTitle, proj.period || ""))
-      for (const b of proj.bullets) children.push(bullet(b))
+      for (const b of nonEmptyBullets(proj.bullets)) children.push(bullet(b))
     }
   }
 
   // Leadership
-  if (doc.leadership?.length) {
+  const dValidLeadership = doc.leadership?.filter(hasLeadership) ?? []
+  if (dValidLeadership.length) {
     children.push(sectionHeading("Leadership"))
-    for (const lead of doc.leadership) {
-      children.push(entryHeader(lead.role, lead.period || ""))
-      if (lead.organization) children.push(subHeader(lead.organization, lead.location || ""))
-      for (const b of lead.bullets) children.push(bullet(b))
+    for (const lead of dValidLeadership) {
+      if (hasText(lead.role)) children.push(entryHeader(lead.role, lead.period || ""))
+      if (hasText(lead.organization)) children.push(subHeader(lead.organization, lead.location || ""))
+      for (const b of nonEmptyBullets(lead.bullets)) children.push(bullet(b))
     }
   }
 
   // Skills
-  if (doc.skills) {
+  if (hasText(doc.skills)) {
     children.push(sectionHeading("Technical Skills"))
     children.push(
       new Paragraph({
@@ -456,9 +495,9 @@ function generateRtf(doc: DocumentContent): string {
   lines.push("\\f0\\fs22")
 
   // Header
-  lines.push(`\\pard\\qc\\b\\fs32 ${doc.name}\\b0\\par`)
-  if (doc.title) lines.push(`\\fs20 ${doc.title}\\par`)
-  if (doc.contact) lines.push(`\\fs18 ${doc.contact}\\par`)
+  if (hasText(doc.name)) lines.push(`\\pard\\qc\\b\\fs32 ${doc.name}\\b0\\par`)
+  if (hasText(doc.title)) lines.push(`\\fs20 ${doc.title}\\par`)
+  if (hasText(doc.contact)) lines.push(`\\fs18 ${doc.contact}\\par`)
   lines.push("\\pard\\par")
 
   const section = (title: string) => {
@@ -466,35 +505,38 @@ function generateRtf(doc: DocumentContent): string {
     lines.push("\\pard\\brdrb\\brdrs\\brdrw10\\brsp20\\par")
   }
 
-  if (doc.education?.length) {
+  const rValidEducation = doc.education?.filter(hasEducation) ?? []
+  if (rValidEducation.length) {
     section("Education")
-    for (const edu of doc.education) {
-      if (edu.school) lines.push(`\\b\\fs20 ${edu.school}\\b0\\par`)
-      if (edu.degree) lines.push(`\\i\\fs18 ${edu.degree}\\i0  ${edu.period || ""}\\par`)
+    for (const edu of rValidEducation) {
+      if (hasText(edu.school)) lines.push(`\\b\\fs20 ${edu.school}\\b0\\par`)
+      if (hasText(edu.degree)) lines.push(`\\i\\fs18 ${edu.degree}\\i0  ${edu.period || ""}\\par`)
     }
     lines.push("\\par")
   }
 
-  if (doc.experience?.length) {
+  const rValidExperience = doc.experience?.filter(hasExperience) ?? []
+  if (rValidExperience.length) {
     section("Experience")
-    for (const exp of doc.experience) {
-      lines.push(`\\b\\fs20 ${exp.role}\\b0  ${exp.period || ""}\\par`)
-      if (exp.company) lines.push(`\\i\\fs18 ${exp.company}\\i0  ${exp.location || ""}\\par`)
-      for (const b of exp.bullets) lines.push(`\\fs18 \\bullet  ${b}\\par`)
+    for (const exp of rValidExperience) {
+      if (hasText(exp.role)) lines.push(`\\b\\fs20 ${exp.role}\\b0  ${exp.period || ""}\\par`)
+      if (hasText(exp.company)) lines.push(`\\i\\fs18 ${exp.company}\\i0  ${exp.location || ""}\\par`)
+      for (const b of nonEmptyBullets(exp.bullets)) lines.push(`\\fs18 \\bullet  ${b}\\par`)
       lines.push("\\par")
     }
   }
 
-  if (doc.projects?.length) {
+  const rValidProjects = doc.projects?.filter(hasProject) ?? []
+  if (rValidProjects.length) {
     section("Projects")
-    for (const proj of doc.projects) {
-      lines.push(`\\b\\fs20 ${proj.name}${proj.tech ? " | " + proj.tech : ""}\\b0  ${proj.period || ""}\\par`)
-      for (const b of proj.bullets) lines.push(`\\fs18 \\bullet  ${b}\\par`)
+    for (const proj of rValidProjects) {
+      lines.push(`\\b\\fs20 ${proj.name}${hasText(proj.tech) ? " | " + proj.tech : ""}\\b0  ${proj.period || ""}\\par`)
+      for (const b of nonEmptyBullets(proj.bullets)) lines.push(`\\fs18 \\bullet  ${b}\\par`)
       lines.push("\\par")
     }
   }
 
-  if (doc.skills) {
+  if (hasText(doc.skills)) {
     section("Technical Skills")
     lines.push(`\\fs18 ${doc.skills}\\par`)
   }

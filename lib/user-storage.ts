@@ -1,18 +1,22 @@
 const PREFIX = "polish_"
 
+function normalizeKey(key: string): string {
+  return key.startsWith(PREFIX) ? key : `${PREFIX}${key}`
+}
+
 export function getUserItem(key: string): string | null {
   if (typeof window === "undefined") return null
-  return localStorage.getItem(`${PREFIX}${key}`)
+  return localStorage.getItem(normalizeKey(key))
 }
 
 export function setUserItem(key: string, value: string): void {
   if (typeof window === "undefined") return
-  localStorage.setItem(`${PREFIX}${key}`, value)
+  localStorage.setItem(normalizeKey(key), value)
 }
 
 export function removeUserItem(key: string): void {
   if (typeof window === "undefined") return
-  localStorage.removeItem(`${PREFIX}${key}`)
+  localStorage.removeItem(normalizeKey(key))
 }
 
 export function clearUserData(): void {

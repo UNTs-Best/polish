@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Upload, X, Check, FileText, FileType, FileCode } from "lucide-react"
+import { Upload, X, Check, FileText, FileType } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { parseDocument, type FormatLabel } from "@/lib/document-parser"
 
@@ -15,26 +15,19 @@ interface FileUploadProps {
 const FORMAT_CONFIG: Record<string, { icon: typeof FileText; color: string; bg: string }> = {
   "PDF": { icon: FileText, color: "text-red-600", bg: "bg-red-50" },
   "DOCX": { icon: FileType, color: "text-blue-600", bg: "bg-blue-50" },
-  "RTF": { icon: FileText, color: "text-purple-600", bg: "bg-purple-50" },
   "TXT": { icon: FileText, color: "text-slate-600", bg: "bg-slate-50" },
-  "LaTeX": { icon: FileCode, color: "text-green-600", bg: "bg-green-50" },
 }
 
-const ACCEPTED_EXTENSIONS = ".pdf,.docx,.doc,.rtf,.txt,.tex,.latex"
+const ACCEPTED_EXTENSIONS = ".pdf,.docx,.txt"
 const ACCEPTED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "application/rtf",
-  "text/rtf",
   "text/plain",
-  "application/x-tex",
-  "application/x-latex",
 ]
 
 function isAcceptedFile(file: File): boolean {
   const ext = file.name.toLowerCase().split(".").pop() || ""
-  return ["pdf", "docx", "doc", "rtf", "txt", "tex", "latex"].includes(ext) || ACCEPTED_TYPES.includes(file.type)
+  return ["pdf", "docx", "txt"].includes(ext) || ACCEPTED_TYPES.includes(file.type)
 }
 
 export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
@@ -61,7 +54,7 @@ export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
     if (file && isAcceptedFile(file)) {
       processFile(file)
     } else if (file) {
-      setError(`"${file.name}" is not a supported format. Please upload PDF, DOCX, RTF, TXT, or LaTeX.`)
+      setError(`"${file.name}" is not a supported format. Please upload PDF, DOCX, or TXT.`)
     }
   }
 
@@ -187,11 +180,11 @@ export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
                   <FileType className="w-5 h-5 text-blue-500" />
                 </div>
                 <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center">
-                  <FileCode className="w-5 h-5 text-green-500" />
+                  <FileText className="w-5 h-5 text-green-500" />
                 </div>
               </div>
               <p className="text-sm text-slate-700 mb-1">Drag and drop your resume here</p>
-              <p className="text-xs text-slate-500 mb-4">PDF, DOCX, RTF, TXT, or LaTeX</p>
+              <p className="text-xs text-slate-500 mb-4">PDF, DOCX, or TXT</p>
               <Button
                 onClick={() => fileInputRef.current?.click()}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
@@ -218,7 +211,7 @@ export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
         )}
 
         <div className="mt-4 flex items-center justify-center gap-2">
-          {["PDF", "DOCX", "RTF", "TXT", "LaTeX"].map((fmt) => (
+          {["PDF", "DOCX", "TXT"].map((fmt) => (
             <span
               key={fmt}
               className="text-[10px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full uppercase tracking-wide"

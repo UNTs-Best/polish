@@ -16,6 +16,9 @@ import {
   FileType,
   FileCode,
   Upload,
+  FilePlus2,
+  Settings,
+  X,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -24,15 +27,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { clearUserData } from "@/lib/user-storage"
+import { clearUserData, setUserItem, removeUserItem } from "@/lib/user-storage"
 import { supabase, signOut as supabaseSignOut } from "@/lib/supabase-browser"
+import { FileUpload } from "@/components/file-upload"
+import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
 
 interface Doc {
   id: string
   title: string
-  mimeType?: string
-  createdAt?: string
-  updatedAt?: string
+  mime_type?: string
+  created_at?: string
+  updated_at?: string
 }
 
 function fileIcon(mimeType?: string) {
@@ -63,6 +68,8 @@ export default function Dashboard() {
   const [docs, setDocs] = useState<Doc[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [showUploadDialog, setShowUploadDialog] = useState(false)
+  const [showNewDocModal, setShowNewDocModal] = useState(false)
 
   const fetchDocs = useCallback(async () => {
     try {
@@ -79,8 +86,48 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const cached = localStorage.getItem("polish_user")
+    if (cached) {
+      try {
+        setUser(JSON.parse(cached))
+      } catch {
+        // ignore malformed cache
+      }
+    }
+
+    const syncSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) {
+          setUser(null)
+          router.replace("/signin")
+          return
+        }
+        const u = session.user
+        const name =
+          [u.user_metadata?.first_name, u.user_metadata?.last_name].filter(Boolean).join(" ") ||
+          u.user_metadata?.name ||
+          u.email?.split("@")[0] ||
+          "User"
+        setUser({ email: u.email ?? "", name, id: u.id })
+        localStorage.setItem("polish_user", JSON.stringify({ email: u.email, name, id: u.id }))
+        fetchDocs()
+      } catch {
+        // Supabase unreachable — redirect to sign-in instead of hanging
+        setUser(null)
+        router.replace("/signin")
+      }
+    }
+
+    syncSession()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
+        setUser(null)
         router.replace("/signin")
         return
       }
@@ -92,15 +139,16 @@ export default function Dashboard() {
         "User"
       setUser({ email: u.email ?? "", name, id: u.id })
       localStorage.setItem("polish_user", JSON.stringify({ email: u.email, name, id: u.id }))
-      fetchDocs()
     })
+
+    return () => subscription.unsubscribe()
   }, [router, fetchDocs])
 
   const handleSignOut = async () => {
     clearUserData()
     await supabaseSignOut()
     setUser(null)
-    router.replace("/")
+    router.replace("/signin")
   }
 
   const handleDelete = async (id: string) => {
@@ -116,19 +164,91 @@ export default function Dashboard() {
   }
 
   const openDocument = (doc: Doc) => {
-    localStorage.setItem(
-      "polishEditor_document",
-      JSON.stringify({ id: doc.id, name: doc.title, title: doc.title })
-    )
+    setUserItem("polish_open_document_id", doc.id)
+    router.push("/editor")
+  }
+
+  const makeUniqueTitle = async (baseTitle: string, userId: string): Promise<string> => {
+    try {
+      const { data } = await supabase
+        .from("documents")
+        .select("title")
+        .eq("user_id", userId)
+      if (!data || data.length === 0) return baseTitle
+
+      const existing = new Set(data.map((d: { title: string }) => d.title))
+      if (!existing.has(baseTitle)) return baseTitle
+
+      let counter = 2
+      while (existing.has(`${baseTitle} (${counter})`)) counter++
+      return `${baseTitle} (${counter})`
+    } catch {
+      return baseTitle
+    }
+  }
+
+  const handleFileUpload = async (_file: File, content: string, format: FormatLabel) => {
+    setShowUploadDialog(false)
+    const parsed = parseResumeText(content)
+    const docContent = {
+      name: parsed.name || "Your Name",
+      title: parsed.title || "",
+      contact: parsed.contact || "",
+      education: parsed.education?.length
+        ? parsed.education
+        : [{ school: "", degree: "", location: "", period: "" }],
+      experience: parsed.experience || [],
+      projects: parsed.projects || [],
+      leadership: parsed.leadership || [],
+      skills: parsed.skills || "",
+    }
+    const baseDisplayName = parsed.name && parsed.name !== "Your Name"
+      ? `${parsed.name}'s Resume`
+      : _file.name
+
+    // Create the document in Supabase immediately so it persists
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        const displayName = await makeUniqueTitle(baseDisplayName, session.user.id)
+        const now = new Date().toISOString()
+        const { data, error } = await supabase
+          .from("documents")
+          .insert({
+            user_id: session.user.id,
+            title: displayName,
+            content: JSON.stringify(docContent),
+            created_at: now,
+            updated_at: now,
+          })
+          .select("id")
+          .single()
+
+        if (!error && data?.id) {
+          setUserItem("polish_open_document_id", data.id)
+          router.push("/editor")
+          return
+        }
+      }
+    } catch {
+      // Supabase unreachable — fall through to localStorage fallback
+    }
+
+    // Fallback: pass via localStorage if Supabase insert failed
+    setUserItem("polish_uploaded_content", JSON.stringify(docContent))
+    setUserItem("polish_uploaded_filename", baseDisplayName)
+    router.push("/editor")
+  }
+
+  const startFromScratch = () => {
+    removeUserItem("polishEditor_document")
+    removeUserItem("polishEditor_versions")
+    removeUserItem("polish_open_document_id")
     router.push("/editor")
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-pulse text-slate-500">Loading...</div>
-      </div>
-    )
+    return null
   }
 
   return (
@@ -176,6 +296,11 @@ export default function Dashboard() {
                     {user.email}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => router.push("/profile")} className="cursor-pointer">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Profile & Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
                     <LogOut className="w-4 h-4 mr-2" />
                     Sign Out
@@ -193,27 +318,14 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold text-slate-900 mb-1">Welcome back, {user.name}</h1>
             <p className="text-slate-500">Your documents</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link href="/editor">
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-slate-300 text-slate-700 rounded-lg gap-2"
-              >
-                <Upload className="w-4 h-4" />
-                Upload
-              </Button>
-            </Link>
-            <Link href="/editor">
-              <Button
-                size="sm"
-                className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg rounded-lg gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                New Document
-              </Button>
-            </Link>
-          </div>
+          <Button
+            size="sm"
+            onClick={() => setShowNewDocModal(true)}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg rounded-lg gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            New Document
+          </Button>
         </div>
 
         {loading ? (
@@ -229,20 +341,21 @@ export default function Dashboard() {
             </div>
             <h2 className="text-xl font-semibold text-slate-900 mb-2">No documents yet</h2>
             <p className="text-slate-500 mb-6 max-w-sm mx-auto">
-              Create a new document or upload an existing resume in PDF, DOCX, LaTeX, or more.
+              Upload an existing resume or start from scratch with a blank template.
             </p>
-            <Link href="/editor">
-              <Button className="bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl gap-2">
-                <Plus className="w-4 h-4" />
-                Create or upload document
-              </Button>
-            </Link>
+            <Button
+              onClick={() => setShowNewDocModal(true)}
+              className="bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Get started
+            </Button>
           </Card>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {docs.map((doc) => {
-              const Icon = fileIcon(doc.mimeType)
-              const color = fileColor(doc.mimeType)
+              const Icon = fileIcon(doc.mime_type)
+              const color = fileColor(doc.mime_type)
               return (
                 <Card
                   key={doc.id}
@@ -268,28 +381,92 @@ export default function Dashboard() {
                   <p className="font-semibold text-slate-900 text-sm leading-snug line-clamp-2 mb-2">
                     {doc.title}
                   </p>
-                  {(doc.updatedAt || doc.createdAt) && (
+                  {(doc.updated_at || doc.created_at) && (
                     <div className="flex items-center gap-1 text-xs text-slate-400">
                       <Clock className="w-3 h-3" />
-                      {formatDate(doc.updatedAt || doc.createdAt)}
+                      {formatDate(doc.updated_at || doc.created_at)}
                     </div>
                   )}
                 </Card>
               )
             })}
 
-            {/* New document card */}
-            <Link href="/editor">
-              <Card className="p-5 border-2 border-dashed border-slate-200 bg-transparent hover:border-slate-400 hover:bg-white/60 transition-all cursor-pointer flex flex-col items-center justify-center gap-2 min-h-[144px]">
-                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                  <Plus className="w-5 h-5 text-slate-500" />
-                </div>
-                <span className="text-sm font-medium text-slate-500">New document</span>
-              </Card>
-            </Link>
+            <Card
+              className="p-5 border-2 border-dashed border-slate-200 bg-transparent hover:border-slate-400 hover:bg-white/60 transition-all cursor-pointer flex flex-col items-center justify-center gap-2 min-h-[144px]"
+              onClick={() => setShowNewDocModal(true)}
+            >
+              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Plus className="w-5 h-5 text-slate-500" />
+              </div>
+              <span className="text-sm font-medium text-slate-500">New document</span>
+            </Card>
           </div>
         )}
       </main>
+
+      {showNewDocModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowNewDocModal(false)}
+        >
+          <Card
+            className="max-w-md w-full p-6 bg-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-slate-900">New Document</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowNewDocModal(false)}
+                className="text-slate-500 hover:text-slate-900"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  setShowNewDocModal(false)
+                  setShowUploadDialog(true)
+                }}
+                className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-center group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-slate-100 group-hover:bg-slate-200 flex items-center justify-center transition-colors">
+                  <Upload className="w-6 h-6 text-slate-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 text-sm">Upload a resume</p>
+                  <p className="text-xs text-slate-500 mt-0.5">PDF, DOCX, or TXT</p>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewDocModal(false)
+                  startFromScratch()
+                }}
+                className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-center group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-slate-100 group-hover:bg-slate-200 flex items-center justify-center transition-colors">
+                  <FilePlus2 className="w-6 h-6 text-slate-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 text-sm">Start from scratch</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Blank resume template</p>
+                </div>
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {showUploadDialog && (
+        <FileUpload
+          onFileUpload={handleFileUpload}
+          onClose={() => setShowUploadDialog(false)}
+        />
+      )}
     </div>
   )
 }

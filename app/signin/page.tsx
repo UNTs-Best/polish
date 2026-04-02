@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,18 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          router.replace("/dashboard")
+        }
+      })
+      .catch(() => {
+        // Supabase unreachable — stay on sign-in page so it still renders
+      })
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,8 +56,11 @@ export default function SignIn() {
 
     localStorage.setItem("polish_user", JSON.stringify({ email: user.email, name, id: user.id }))
 
-    const hasOnboarded = localStorage.getItem(`polish_onboarding_${user.id}`)
-    router.push(hasOnboarded ? "/editor" : "/onboarding")
+    if (user.user_metadata?.target_role) {
+      localStorage.setItem("polish_target_role", user.user_metadata.target_role)
+    }
+
+    router.replace("/dashboard")
   }
 
   return (

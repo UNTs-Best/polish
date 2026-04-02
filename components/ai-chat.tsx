@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
-import { Send, AlertCircle, Check, X, Undo, Mic, Paperclip, MessageSquare } from "lucide-react"
+import { Send, AlertCircle, Check, X, Undo, MessageSquare } from "lucide-react"
 
 interface Message {
   role: "user" | "assistant" | "error"
@@ -15,11 +15,20 @@ interface Message {
 interface SuggestedChanges {
   type: string
   description: string
-  changes: Array<{
+  changes?: Array<{
     section: string
     original: string
     updated: string
   }>
+  resume?: {
+    name: string
+    title: string
+    contact: string
+    education: Array<{ school: string; degree: string; location: string; period: string }>
+    experience: Array<{ role: string; company: string; location: string; period: string; bullets: string[] }>
+    projects: Array<{ name: string; tech: string; period: string; bullets: string[] }>
+    skills: string
+  }
 }
 
 interface DocumentContent {
@@ -41,9 +50,10 @@ interface AIChatProps {
   simulateError?: boolean
   documentContent?: DocumentContent
   className?: string
+  autoReformat?: boolean
 }
 
-const QUICK_ACTIONS = [
+const QUICK_ACTIONS_EXISTING = [
   { label: "Optimize for ATS", prompt: "Optimize the entire resume for ATS (applicant tracking systems). Use strong keywords and standard section headers." },
   { label: "Proofread", prompt: "Proofread the entire resume. Fix any grammar, spelling, or punctuation issues." },
   { label: "Make concise", prompt: "Make all bullet points more concise while preserving impact and metrics." },
@@ -51,14 +61,26 @@ const QUICK_ACTIONS = [
   { label: "Improve formatting", prompt: "Review the resume formatting and suggest improvements for readability." },
 ]
 
+const QUICK_ACTIONS_BLANK = [
+  { label: "Paste my background", prompt: "I'm ready to paste my background info so you can build my resume." },
+  { label: "Walk me through it", prompt: "I don't have anything to paste. Ask me the key questions to build my resume." },
+]
+
 export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) => void }, AIChatProps>(function AIChat(
-  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent, className },
+  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent, className, autoReformat },
   ref,
 ) {
+  const isResumeBlank = !documentContent?.name?.trim() &&
+    !documentContent?.experience?.some((e: any) => e.role?.trim() || e.company?.trim()) &&
+    !documentContent?.education?.some((e: any) => e.school?.trim() || e.degree?.trim()) &&
+    !documentContent?.skills?.trim()
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "What would you like me to improve? Select text or use a quick action below.",
+      content: isResumeBlank
+        ? "Hi! I'll build your resume. Tell me everything — your name, target role, work experience, education, and skills. You can paste from LinkedIn or another resume, or just describe your background. I'll create a polished, ATS-ready resume from whatever you give me."
+        : "What would you like me to improve? Select text or use a quick action below.",
       timestamp: new Date(),
     },
   ])
@@ -85,6 +107,19 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       setCurrentSelection(selectedText)
     }
   }, [selectedText])
+
+  // Auto-trigger reformat when "Upload & polish" was selected
+  const autoReformatTriggered = useRef(false)
+  useEffect(() => {
+    if (autoReformat && !autoReformatTriggered.current && !isResumeBlank) {
+      autoReformatTriggered.current = true
+      // Small delay to ensure component is fully mounted
+      const timer = setTimeout(() => {
+        handleSendMessage("Completely reformat and improve my entire resume. Rewrite all bullet points with strong action verbs and quantified achievements. Improve the formatting, make it ATS-optimized and professional. Return the full improved resume.")
+      }, 600)
+      return () => clearTimeout(timer)
+    }
+  }, [autoReformat, isResumeBlank])
 
   const handleSendMessage = async (messageText?: string, contextText?: string) => {
     const messageToSend = messageText || input
@@ -269,12 +304,14 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         </div>
       </div>
 
-      {/* Quick Actions (Prism-inspired) */}
+      {/* Quick Actions */}
       {messages.length <= 2 && !isLoading && (
         <div className="px-4 pt-3 pb-1">
-          <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">Quick actions</p>
+          <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">
+            {isResumeBlank ? "Target role" : "Quick actions"}
+          </p>
           <div className="flex flex-wrap gap-1.5">
-            {QUICK_ACTIONS.map((action) => (
+            {(isResumeBlank ? QUICK_ACTIONS_BLANK : QUICK_ACTIONS_EXISTING).map((action) => (
               <button
                 key={action.label}
                 onClick={() => handleSendMessage(action.prompt)}
@@ -292,7 +329,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         {messages.map((message, index) => (
           <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+              className={`max-w-[85%] min-w-0 rounded-2xl px-4 py-2.5 text-sm ${
                 message.role === "user"
                   ? "bg-slate-100 text-slate-900"
                   : message.role === "error"
@@ -306,21 +343,47 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                   <span className="font-semibold text-red-900">Error</span>
                 </div>
               )}
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              <div className="whitespace-pre-wrap break-words">{message.content}</div>
 
               {message.suggestedChanges && (
                 <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200/60">
                   <div className="space-y-2">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Suggested changes</div>
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                      {message.suggestedChanges.type === "full_resume" ? "Generated resume" : "Suggested changes"}
+                    </div>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {message.suggestedChanges.changes.map((change, idx) => (
-                        <div key={idx} className="text-xs space-y-1 pb-2 border-b border-slate-200/60 last:border-0">
-                          {change.original && (
-                            <div className="text-red-600/80 line-through">{change.original}</div>
+                      {message.suggestedChanges.type === "full_resume" && message.suggestedChanges.resume ? (
+                        <div className="text-xs space-y-1.5">
+                          {message.suggestedChanges.resume.name && (
+                            <div className="font-medium text-slate-900">{message.suggestedChanges.resume.name}</div>
                           )}
-                          <div className="text-green-700 font-medium">{change.updated}</div>
+                          {message.suggestedChanges.resume.title && (
+                            <div className="text-slate-600">{message.suggestedChanges.resume.title}</div>
+                          )}
+                          {message.suggestedChanges.resume.experience?.length > 0 && (
+                            <div className="text-green-700">
+                              {message.suggestedChanges.resume.experience.length} experience{message.suggestedChanges.resume.experience.length !== 1 ? "s" : ""} with improved bullets
+                            </div>
+                          )}
+                          {message.suggestedChanges.resume.education?.length > 0 && (
+                            <div className="text-green-700">
+                              {message.suggestedChanges.resume.education.length} education entr{message.suggestedChanges.resume.education.length !== 1 ? "ies" : "y"}
+                            </div>
+                          )}
+                          {message.suggestedChanges.resume.skills && (
+                            <div className="text-green-700">Skills section included</div>
+                          )}
                         </div>
-                      ))}
+                      ) : (
+                        message.suggestedChanges.changes?.map((change, idx) => (
+                          <div key={idx} className="text-xs space-y-1 pb-2 border-b border-slate-200/60 last:border-0">
+                            {change.original && (
+                              <div className="text-red-600/80 line-through">{change.original}</div>
+                            )}
+                            <div className="text-green-700 font-medium">{change.updated}</div>
+                          </div>
+                        ))
+                      )}
                     </div>
                     {!acceptedChanges.has(index) ? (
                       <div className="flex gap-2 mt-3 pt-2 border-t border-slate-200/60">
@@ -419,15 +482,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
             aria-label="Chat input field"
           />
           <div className="flex items-center gap-1">
-            <button className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" aria-label="Voice input">
-              <Mic className="w-4 h-4" />
-            </button>
-            <button
-              className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
-              aria-label="Attach file"
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
             <button
               onClick={() => handleSendMessage()}
               disabled={isLoading || !input.trim()}

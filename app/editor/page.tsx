@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
-import { Undo, Download, Check, ArrowLeft, HelpCircle, Clock, Upload, User, LogOut, ChevronDown } from "lucide-react"
+import { Undo, Download, Check, ArrowLeft, HelpCircle, Clock, Upload, User, LogOut, ChevronDown, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -21,7 +21,7 @@ import { InlinePrompt } from "@/components/inline-prompt"
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type FormatLabel } from "@/lib/document-parser"
+import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
 import { getUserItem, setUserItem, removeUserItem, clearUserData } from "@/lib/user-storage"
@@ -30,11 +30,12 @@ import { supabase, signOut as supabaseSignOut } from "@/lib/supabase-browser"
 interface SuggestedChanges {
   type: string
   description: string
-  changes: Array<{
+  changes?: Array<{
     section: string
     original: string
     updated: string
   }>
+  resume?: DocumentContent
 }
 
 interface PendingChange {
@@ -80,23 +81,6 @@ interface DocumentContent {
   skills: string
 }
 
-function parseUploadedResumeContent(content: string) {
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-
-  return {
-    name: lines[0] || "",
-    title: lines[1] || "",
-    contact: lines[2] || "",
-    education: [] as DocumentContent["education"],
-    experience: [] as DocumentContent["experience"],
-    projects: [] as DocumentContent["projects"],
-    leadership: [] as DocumentContent["leadership"],
-    skills: "",
-  }
-}
 
 interface DocumentVersion {
   id: string
@@ -149,89 +133,83 @@ export default function EditorPage() {
   const [documentId, setDocumentId] = useState<string | null>(null)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [userRole, setUserRole] = useState<string | undefined>()
+  const [autoReformat, setAutoReformat] = useState(false)
   const { toast } = useToast()
 
   // Claude connection state
   // Source format state (from uploaded file)
   const [sourceFormat, setSourceFormat] = useState<FormatLabel | null>(null)
 
-  const [documentContent, setDocumentContent] = useState<DocumentContent>({
-    name: "Jake Ryan",
-    title: "Software Engineer",
-    contact: "jake@su.edu | (123) 456-7890 | linkedin.com/in/jake | github.com/jake",
-    education: [
-      {
-        school: "Southwestern University",
-        degree: "Bachelor of Arts in Computer Science, Minor in Business",
-        location: "Georgetown, TX",
-        period: "Aug. 2018 -- May 2021",
-      },
-      {
-        school: "Blinn College",
-        degree: "Associate's in Liberal Arts",
-        location: "Bryan, TX",
-        period: "Aug. 2014 -- May 2018",
-      },
-    ],
-    experience: [
-      {
-        role: "Undergraduate Research Assistant",
-        company: "Texas A&M University",
-        location: "College Station, TX",
-        period: "June 2020 -- Present",
-        bullets: [
-          "Developed a REST API using FastAPI and PostgreSQL to store data from learning management systems",
-          "Developed a full-stack web application using Flask, React, PostgreSQL and Docker to analyze GitHub data",
-          "Explored ways to visualize GitHub collaboration in a classroom setting",
-        ],
-      },
-      {
-        role: "Information Technology Support Specialist",
-        company: "Southwestern University",
-        location: "Georgetown, TX",
-        period: "Sep. 2018 -- Present",
-        bullets: [
-          "Communicate with managers to set up campus computers used on campus",
-          "Assess and troubleshoot computer problems brought by students, faculty and staff",
-          "Maintain upkeep of computers, classroom equipment, and 200 printers across campus",
-        ],
-      },
-    ],
-    projects: [
-      {
-        name: "Gitlytics",
-        tech: "Python, Flask, React, PostgreSQL, Docker, GCP",
-        period: "June 2020 -- Present",
-        bullets: [
-          "Developed a full-stack web application using with Flask serving a REST API with React as the frontend",
-          "Implemented GitHub OAuth to get data from user's repositories",
-          "Visualized GitHub data to show collaboration",
-          "Used Celery and Redis for asynchronous tasks",
-        ],
-      },
-    ],
+  const blankDocument: DocumentContent = {
+    name: "",
+    title: "",
+    contact: "",
+    education: [{ school: "", degree: "", location: "", period: "" }],
+    experience: [{ role: "", company: "", location: "", period: "", bullets: [""] }],
+    projects: [],
     leadership: [],
-    skills:
-      "Languages: Java, Python, C/C++, SQL (Postgres), JavaScript, HTML/CSS, R | Frameworks: React, Node.js, Flask, JUnit, WordPress, Material-UI, FastAPI | Developer Tools: Git, Docker, TravisCI, Google Cloud Platform, VS Code | Libraries: pandas, NumPy, Matplotlib",
-  })
+    skills: "",
+  }
+
+  const [documentContent, setDocumentContent] = useState<DocumentContent>(blankDocument)
 
   const [originalDocumentContent, setOriginalDocumentContent] = useState<DocumentContent | null>(null)
 
   const [showInlinePrompt, setShowInlinePrompt] = useState(false)
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const aiChatRef = useRef<{ sendMessage: (prompt: string, text: string) => void } | null>(null)
+  const uploadConsumedRef = useRef(false)
+  const documentContentRef = useRef(documentContent)
+  const documentVersionsRef = useRef(documentVersions)
 
-  // Load user from localStorage on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem("polish_user")
-    if (storedUser) {
+    const syncSessionUser = async () => {
       try {
-        setUser(JSON.parse(storedUser))
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (session?.user) {
+          const u = session.user
+          const name =
+            [u.user_metadata?.first_name, u.user_metadata?.last_name].filter(Boolean).join(" ") ||
+            u.user_metadata?.name ||
+            u.email?.split("@")[0] ||
+            "User"
+          const normalized = { email: u.email ?? "", name }
+          setUser(normalized)
+          localStorage.setItem("polish_user", JSON.stringify({ ...normalized, id: u.id }))
+          return
+        }
       } catch {
-        setUser(null)
+        // Supabase unreachable — fall through to redirect
       }
+      setUser(null)
+      router.replace("/signin")
     }
-  }, [])
+
+    syncSessionUser()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setUser(null)
+        router.replace("/signin")
+        return
+      }
+      const u = session.user
+      const name =
+        [u.user_metadata?.first_name, u.user_metadata?.last_name].filter(Boolean).join(" ") ||
+        u.user_metadata?.name ||
+        u.email?.split("@")[0] ||
+        "User"
+      setUser({ email: u.email ?? "", name })
+      localStorage.setItem("polish_user", JSON.stringify({ email: u.email, name, id: u.id }))
+    })
+
+    return () => subscription.unsubscribe()
+  }, [router])
 
   const [isSigningOut, setIsSigningOut] = useState(false)
 
@@ -245,7 +223,55 @@ export default function EditorPage() {
   }
 
   useEffect(() => {
-    const loadFromSupabase = async () => {
+    const loadInitialDocument = async () => {
+      // Guard against React Strict Mode double-fire: once we consume
+      // the uploaded content from localStorage, don't run the fallback
+      // paths on the second invocation.
+      if (uploadConsumedRef.current) return
+
+      const uploadedContent = getUserItem("polish_uploaded_content")
+      const uploadedFilename = getUserItem("polish_uploaded_filename")
+
+      if (uploadedContent && uploadedContent.length > 0) {
+        try {
+          const parsedContent = JSON.parse(uploadedContent) as DocumentContent
+
+          // Mark consumed BEFORE removing from storage so a Strict Mode
+          // re-run skips the fallback paths entirely.
+          uploadConsumedRef.current = true
+
+          // Check if "Upload & polish" was selected
+          const reformatFlag = getUserItem("polish_reformat")
+          if (reformatFlag) {
+            removeUserItem("polish_reformat")
+            setAutoReformat(true)
+          }
+
+          removeUserItem("polish_uploaded_content")
+          removeUserItem("polish_uploaded_filename")
+
+          setDocumentContent(parsedContent)
+          setOriginalDocumentContent(parsedContent)
+
+          if (uploadedFilename) {
+            setUploadedFileName(uploadedFilename)
+          }
+
+          const initialVersion: DocumentVersion = {
+            id: `v-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            description: `Imported from: ${uploadedFilename || "uploaded file"}`,
+            content: parsedContent,
+          }
+          setDocumentVersions([initialVersion])
+          setLastSavedAt(new Date())
+          return
+        } catch {
+          console.error("[editor] Failed to parse uploaded content")
+        }
+      }
+
+      // Load from Supabase if authenticated, otherwise localStorage
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
@@ -253,17 +279,14 @@ export default function EditorPage() {
           return
         }
 
-        // If we have a stored document ID, load that specific doc
-        const storedDoc = getUserItem("polishEditor_document")
-        const storedId = storedDoc ? JSON.parse(storedDoc)?.id : null
+        const requestedId = getUserItem("polish_open_document_id")
+        if (requestedId) {
+          removeUserItem("polish_open_document_id")
+        }
 
-        const query = supabase
-          .from("documents")
-          .select("id, title, content")
-          .order("updated_at", { ascending: false })
-          .limit(1)
-
-        if (storedId) query.eq("id", storedId)
+        const query = requestedId
+          ? supabase.from("documents").select("id, title, content").eq("id", requestedId)
+          : supabase.from("documents").select("id, title, content").order("updated_at", { ascending: false }).limit(1)
 
         const { data, error } = await query.single()
 
@@ -272,7 +295,9 @@ export default function EditorPage() {
             const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content
             setDocumentId(data.id)
             setDocumentContent(parsed)
-            console.log("[editor] Loaded document from Supabase:", data.id)
+            if (data.title) {
+              setUploadedFileName(data.title)
+            }
           } catch {
             loadFromLocalStorage(setDocumentContent, setDocumentVersions)
           }
@@ -284,86 +309,72 @@ export default function EditorPage() {
       }
     }
 
-    loadFromSupabase()
-  }, [])
-
-  useEffect(() => {
-    const loadDocumentContent = () => {
-      // FIRST: Check for uploaded content from onboarding (takes priority)
-      const uploadedContent = getUserItem("polish_uploaded_content")
-      const uploadedFilename = getUserItem("polish_uploaded_filename")
-
-      console.log("[v0] Checking for uploaded content:", uploadedContent ? "found" : "not found")
-
-      if (uploadedContent && uploadedContent.length > 0) {
-        try {
-          const parsedContent = JSON.parse(uploadedContent)
-          console.log("[v0] Parsed uploaded content:", parsedContent)
-
-          setDocumentContent(parsedContent)
-          setOriginalDocumentContent(parsedContent)
-
-          if (uploadedFilename) {
-            setUploadedFileName(uploadedFilename)
-          }
-
-          // Clear the uploaded content so it's not reloaded next time
-          removeUserItem("polish_uploaded_content")
-          removeUserItem("polish_uploaded_filename")
-
-          // Create initial version snapshot
-          const initialVersion: DocumentVersion = {
-            id: `v-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            description: `Imported from: ${uploadedFilename || "uploaded file"}`,
-            content: parsedContent,
-          }
-          setDocumentVersions([initialVersion])
-          setLastSavedAt(new Date())
-
-          console.log("[v0] Successfully loaded uploaded content:", uploadedFilename)
-          return true // Uploaded content was loaded
-        } catch {
-          console.error("[v0] Failed to parse uploaded content")
-        }
-      }
-
-      return false // No uploaded content
-    }
-
-    // Load uploaded content first, only fall back to localStorage if none found
-    const hasUploadedContent = loadDocumentContent()
-    if (!hasUploadedContent) {
-      loadFromLocalStorage(setDocumentContent, setDocumentVersions)
-    }
+    loadInitialDocument()
   }, [])
 
   const handleAutosave = async () => {
+    // Skip saving a blank/empty document to Supabase — only save once the
+    // user has actually loaded or entered content.
+    const hasContent = documentContent.name?.trim() ||
+      documentContent.experience?.some(e => e.role?.trim() || e.company?.trim()) ||
+      documentContent.skills?.trim()
+
     setIsSaving(true)
     try {
       setUserItem("polishEditor_document", JSON.stringify(documentContent))
       setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
-      console.log("[v0] Saved to localStorage")
 
-      // Sync to Supabase if signed in
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        const payload: Record<string, unknown> = {
-          user_id: session.user.id,
-          title: documentContent.name || "Untitled",
-          content: JSON.stringify(documentContent),
-          updated_at: new Date().toISOString(),
-        }
-        if (documentId) payload.id = documentId
+      // Sync to Supabase if signed in AND document has real content
+      if (hasContent) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          const now = new Date().toISOString()
+          const baseTitle = documentContent.name
+            ? `${documentContent.name}'s Resume`
+            : "Untitled"
 
-        const { data, error: saveError } = await supabase
-          .from("documents")
-          .upsert(payload, { onConflict: "id" })
-          .select("id")
-          .single()
+          // For new documents, ensure the title is unique
+          let title = baseTitle
+          if (!documentId) {
+            try {
+              const { data: existing } = await supabase
+                .from("documents")
+                .select("title")
+                .eq("user_id", session.user.id)
+              if (existing) {
+                const titles = new Set(existing.map((d: { title: string }) => d.title))
+                if (titles.has(baseTitle)) {
+                  let counter = 2
+                  while (titles.has(`${baseTitle} (${counter})`)) counter++
+                  title = `${baseTitle} (${counter})`
+                }
+              }
+            } catch {
+              // ignore — use baseTitle
+            }
+          }
 
-        if (!saveError && data?.id) {
-          if (!documentId) setDocumentId(data.id)
+          const payload: Record<string, unknown> = {
+            user_id: session.user.id,
+            title,
+            content: JSON.stringify(documentContent),
+            updated_at: now,
+          }
+          if (documentId) {
+            payload.id = documentId
+          } else {
+            payload.created_at = now
+          }
+
+          const { data, error: saveError } = await supabase
+            .from("documents")
+            .upsert(payload, { onConflict: "id" })
+            .select("id")
+            .single()
+
+          if (!saveError && data?.id) {
+            if (!documentId) setDocumentId(data.id)
+          }
         }
       }
       setLastSavedAt(new Date())
@@ -426,7 +437,7 @@ export default function EditorPage() {
 
     setOriginalDocumentContent({ ...documentContent })
 
-    const newPendingChanges: PendingChange[] = changes.changes.map((change, idx) => ({
+    const newPendingChanges: PendingChange[] = (changes.changes || []).map((change, idx) => ({
       id: `${changes.type}-${idx}`,
       section: change.section,
       field: "bullets",
@@ -437,12 +448,152 @@ export default function EditorPage() {
     setPendingChanges(newPendingChanges)
     setShowPendingChanges(true)
 
-    // Generic handler: find and replace the original text with updated text across all sections
+    // Handle "full_resume" type — replace entire document with AI-generated resume
+    if (changes.type === "full_resume" && changes.resume) {
+      const resume = changes.resume
+      setDocumentContent({
+        name: resume.name || "",
+        title: resume.title || "",
+        contact: resume.contact || "",
+        education: resume.education?.length
+          ? resume.education
+          : [{ school: "", degree: "", location: "", period: "" }],
+        experience: resume.experience?.length
+          ? resume.experience.map(exp => ({
+              ...exp,
+              bullets: exp.bullets || [],
+            }))
+          : [{ role: "", company: "", location: "", period: "", bullets: [""] }],
+        projects: resume.projects?.length
+          ? resume.projects.map(proj => ({
+              ...proj,
+              bullets: proj.bullets || [],
+            }))
+          : [],
+        leadership: (resume as any).leadership || [],
+        skills: resume.skills || "",
+      })
+      createVersionSnapshot(changes.description || "AI-generated resume")
+      return
+    }
+
+    // Legacy: Handle "build_resume" type — populate blank fields from scratch
+    if (changes.type === "build_resume" && changes.changes) {
+      setDocumentContent((prev) => {
+        const updated = { ...prev }
+
+        for (const change of changes.changes!) {
+          const section = change.section.toLowerCase()
+
+          if (section === "name" || section === "header") {
+            if (!updated.name?.trim()) updated.name = change.updated
+          } else if (section === "title" || section === "target_role") {
+            if (!updated.title?.trim()) updated.title = change.updated
+          } else if (section === "contact") {
+            updated.contact = change.updated
+          } else if (section === "skills") {
+            updated.skills = updated.skills?.trim()
+              ? `${updated.skills}, ${change.updated}`
+              : change.updated
+          } else if (section === "education") {
+            // Parse education entry: "School | Degree | Location | Period"
+            const parts = change.updated.split("|").map((s: string) => s.trim())
+            const newEdu = {
+              school: parts[0] || "",
+              degree: parts[1] || "",
+              location: parts[2] || "",
+              period: parts[3] || "",
+            }
+            // Replace empty placeholder or append
+            const emptyIdx = updated.education.findIndex(
+              (e) => !e.school?.trim() && !e.degree?.trim()
+            )
+            if (emptyIdx >= 0) {
+              updated.education = [...updated.education]
+              updated.education[emptyIdx] = newEdu
+            } else {
+              updated.education = [...updated.education, newEdu]
+            }
+          } else if (section === "experience") {
+            // Check if this is a role header "Role | Company | Location | Period"
+            // or a bullet point
+            if (change.updated.includes("|")) {
+              const parts = change.updated.split("|").map((s: string) => s.trim())
+              const newExp = {
+                role: parts[0] || "",
+                company: parts[1] || "",
+                location: parts[2] || "",
+                period: parts[3] || "",
+                bullets: [],
+              }
+              const emptyIdx = updated.experience.findIndex(
+                (e) => !e.role?.trim() && !e.company?.trim()
+              )
+              if (emptyIdx >= 0) {
+                updated.experience = [...updated.experience]
+                updated.experience[emptyIdx] = newExp
+              } else {
+                updated.experience = [...updated.experience, newExp]
+              }
+            } else {
+              // It's a bullet — add to the last experience entry
+              const lastIdx = updated.experience.length - 1
+              if (lastIdx >= 0) {
+                updated.experience = [...updated.experience]
+                const lastExp = { ...updated.experience[lastIdx] }
+                const emptyBulletIdx = lastExp.bullets.findIndex((b) => !b.trim())
+                if (emptyBulletIdx >= 0) {
+                  lastExp.bullets = [...lastExp.bullets]
+                  lastExp.bullets[emptyBulletIdx] = change.updated
+                } else {
+                  lastExp.bullets = [...lastExp.bullets, change.updated]
+                }
+                updated.experience[lastIdx] = lastExp
+              }
+            }
+          } else if (section === "projects") {
+            if (change.updated.includes("|")) {
+              const parts = change.updated.split("|").map((s: string) => s.trim())
+              updated.projects = [
+                ...updated.projects,
+                { name: parts[0] || "", tech: parts[1] || "", period: parts[2] || "", bullets: [] },
+              ]
+            } else {
+              const lastIdx = updated.projects.length - 1
+              if (lastIdx >= 0) {
+                updated.projects = [...updated.projects]
+                const lastProj = { ...updated.projects[lastIdx] }
+                lastProj.bullets = [...lastProj.bullets, change.updated]
+                updated.projects[lastIdx] = lastProj
+              }
+            }
+          }
+        }
+
+        return updated
+      })
+      return
+    }
+
+    // If no changes array, nothing to do
+    if (!changes.changes?.length) return
+
+    // Strip leading bullet symbols (•, -, *) that the AI may include
+    const stripBullet = (s: string) => s.replace(/^\s*[•\-*]\s*/, "")
+
+    // Standard handler: find and replace the original text with updated text across all sections
     setDocumentContent((prev) => {
       const updated = { ...prev }
 
+      // Normalize changes: strip bullet prefixes from original and updated
+      const normalizedChanges = changes.changes!.map((c) => ({
+        ...c,
+        original: stripBullet(c.original),
+        updated: stripBullet(c.updated),
+      }))
+
       // Update header fields
-      for (const change of changes.changes) {
+      for (const change of normalizedChanges) {
         if (change.original === prev.name) updated.name = change.updated
         if (change.original === prev.title) updated.title = change.updated
         if (change.original === prev.contact) updated.contact = change.updated
@@ -452,7 +603,7 @@ export default function EditorPage() {
       // Update education fields
       updated.education = prev.education.map((edu) => {
         const newEdu = { ...edu }
-        for (const change of changes.changes) {
+        for (const change of normalizedChanges) {
           if (change.original === edu.school) newEdu.school = change.updated
           if (change.original === edu.degree) newEdu.degree = change.updated
           if (change.original === edu.location) newEdu.location = change.updated
@@ -462,47 +613,99 @@ export default function EditorPage() {
       })
 
       // Update experience bullets
-      updated.experience = prev.experience.map((exp) => ({
-        ...exp,
-        bullets: exp.bullets.map((bullet) => {
-          const change = changes.changes.find((c) => {
+      updated.experience = prev.experience.map((exp) => {
+        const newExp = { ...exp }
+        // Update role/company/location/period fields
+        for (const change of normalizedChanges) {
+          if (change.original === exp.role) newExp.role = change.updated
+          if (change.original === exp.company) newExp.company = change.updated
+          if (change.original === exp.location) newExp.location = change.updated
+          if (change.original === exp.period) newExp.period = change.updated
+        }
+        // Update existing bullets and track which changes were matched
+        const matchedChangeIndices = new Set<number>()
+        newExp.bullets = exp.bullets.map((bullet) => {
+          const changeIdx = normalizedChanges.findIndex((c) => {
+            if (c.section?.toLowerCase() !== "experience") return false
             if (c.original === bullet) return true
             if (c.original.toLowerCase() === bullet.toLowerCase()) return true
             if (bullet.includes(c.original) || c.original.includes(bullet)) return true
             return false
           })
-          return change ? change.updated : bullet
-        }),
-      }))
+          if (changeIdx !== -1) {
+            matchedChangeIndices.add(changeIdx)
+            return normalizedChanges[changeIdx].updated
+          }
+          return bullet
+        })
+        // Append new bullets from unmatched changes that target this experience's section
+        const unmatchedExpChanges = normalizedChanges.filter((c, idx) =>
+          !matchedChangeIndices.has(idx) &&
+          c.section?.toLowerCase() === "experience" &&
+          !c.original?.trim()
+        )
+        for (const change of unmatchedExpChanges) {
+          newExp.bullets.push(change.updated)
+        }
+        return newExp
+      })
 
       // Update project bullets
-      updated.projects = prev.projects.map((proj) => ({
-        ...proj,
-        bullets: proj.bullets.map((bullet) => {
-          const change = changes.changes.find((c) => {
+      updated.projects = prev.projects.map((proj) => {
+        const matchedChangeIndices = new Set<number>()
+        const newBullets = proj.bullets.map((bullet) => {
+          const changeIdx = normalizedChanges.findIndex((c) => {
+            if (c.section?.toLowerCase() !== "projects") return false
             if (c.original === bullet) return true
             if (c.original.toLowerCase() === bullet.toLowerCase()) return true
             if (bullet.includes(c.original) || c.original.includes(bullet)) return true
             return false
           })
-          return change ? change.updated : bullet
-        }),
-      }))
+          if (changeIdx !== -1) {
+            matchedChangeIndices.add(changeIdx)
+            return normalizedChanges[changeIdx].updated
+          }
+          return bullet
+        })
+        const unmatchedProjChanges = normalizedChanges.filter((c, idx) =>
+          !matchedChangeIndices.has(idx) &&
+          c.section?.toLowerCase() === "projects" &&
+          !c.original?.trim()
+        )
+        for (const change of unmatchedProjChanges) {
+          newBullets.push(change.updated)
+        }
+        return { ...proj, bullets: newBullets }
+      })
 
       // Update leadership bullets if they exist
       if (updated.leadership) {
-        updated.leadership = prev.leadership?.map((lead) => ({
-          ...lead,
-          bullets: lead.bullets.map((bullet) => {
-            const change = changes.changes.find((c) => {
+        updated.leadership = prev.leadership?.map((lead) => {
+          const matchedChangeIndices = new Set<number>()
+          const newBullets = lead.bullets.map((bullet) => {
+            const changeIdx = normalizedChanges.findIndex((c) => {
+              if (c.section?.toLowerCase() !== "leadership") return false
               if (c.original === bullet) return true
               if (c.original.toLowerCase() === bullet.toLowerCase()) return true
               if (bullet.includes(c.original) || c.original.includes(bullet)) return true
               return false
             })
-            return change ? change.updated : bullet
-          }),
-        }))
+            if (changeIdx !== -1) {
+              matchedChangeIndices.add(changeIdx)
+              return normalizedChanges[changeIdx].updated
+            }
+            return bullet
+          })
+          const unmatchedLeadChanges = normalizedChanges.filter((c, idx) =>
+            !matchedChangeIndices.has(idx) &&
+            c.section?.toLowerCase() === "leadership" &&
+            !c.original?.trim()
+          )
+          for (const change of unmatchedLeadChanges) {
+            newBullets.push(change.updated)
+          }
+          return { ...lead, bullets: newBullets }
+        })
       }
 
       return updated
@@ -532,12 +735,15 @@ export default function EditorPage() {
   }
 
   const handleFileUpload = (file: File, content: string, format: FormatLabel) => {
-    setUploadedFileName(file.name)
     setSourceFormat(format)
     setShowUploadDialog(false)
 
-    // Parse the actual file content into structured resume data
-    const parsed = parseUploadedResumeContent(content)
+    const parsed = parseResumeText(content)
+
+    const displayName = parsed.name && parsed.name !== "Your Name"
+      ? `${parsed.name}'s Resume`
+      : file.name
+    setUploadedFileName(displayName)
 
     setDocumentContent({
       name: parsed.name || "Your Name",
@@ -550,7 +756,7 @@ export default function EditorPage() {
       skills: parsed.skills || "",
     })
 
-    createVersionSnapshot(`Uploaded file: ${file.name}`)
+    createVersionSnapshot(`Uploaded file: ${displayName}`)
     setTimeout(() => {
       triggerSave()
     }, 100)
@@ -618,24 +824,31 @@ export default function EditorPage() {
     }
   }, [documentVersions])
 
+  // Keep refs in sync so event handlers always read the latest values
+  useEffect(() => { documentContentRef.current = documentContent }, [documentContent])
+  useEffect(() => { documentVersionsRef.current = documentVersions }, [documentVersions])
+
+  // Save to localStorage + trigger Supabase sync on page close
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      setUserItem("polishEditor_document", JSON.stringify(documentContent))
-      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
-      console.log("[v0] Saved on beforeunload")
+    const handleBeforeUnload = () => {
+      setUserItem("polishEditor_document", JSON.stringify(documentContentRef.current))
+      setUserItem("polishEditor_versions", JSON.stringify(documentVersionsRef.current))
       triggerSave()
     }
 
     window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [triggerSave])
 
+  // Save to localStorage + trigger Supabase sync on SPA navigation away (unmount only)
+  useEffect(() => {
     return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload)
-      setUserItem("polishEditor_document", JSON.stringify(documentContent))
-      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
-      console.log("[v0] Saved on unmount")
+      setUserItem("polishEditor_document", JSON.stringify(documentContentRef.current))
+      setUserItem("polishEditor_versions", JSON.stringify(documentVersionsRef.current))
       triggerSave()
     }
-  }, [triggerSave, documentContent, documentVersions])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleClearSelection = () => {
     setSelectedText("")
@@ -683,9 +896,9 @@ export default function EditorPage() {
       {showWelcomeModal && <EditorWelcomeModal onClose={handleCloseWelcome} userRole={userRole} />}
 
       <header className="border-b border-border bg-background sticky top-0 z-40">
-        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <Link href="/">
+            <Link href="/dashboard">
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Back</span>
@@ -747,10 +960,15 @@ export default function EditorPage() {
                     {user.email}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => router.push("/profile")} className="cursor-pointer">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Profile & Settings
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setShowWelcomeModal(true)}
                     className="cursor-pointer"
                   >
+                    <HelpCircle className="w-4 h-4 mr-2" />
                     Open Guide
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -803,6 +1021,7 @@ export default function EditorPage() {
             template="classic"
             onMouseUp={handleMouseUp}
             isTextHighlighted={isTextHighlighted}
+            onContentChange={setDocumentContent}
           />
 
           {/* Inline Prompt Component */}
@@ -825,6 +1044,7 @@ export default function EditorPage() {
           onUndo={handleUndoChanges}
           onClearSelection={handleClearSelection}
           documentContent={documentContent}
+          autoReformat={autoReformat}
         />
       </div>
 

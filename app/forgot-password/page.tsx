@@ -4,18 +4,26 @@ import type React from "react"
 
 import { useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, ArrowRight } from "lucide-react"
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { supabase } from "@/lib/supabase-browser"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
   const [submitted, setSubmitted] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim()) return
+
+    setIsLoading(true)
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/signin`,
+    })
+    setIsLoading(false)
     setSubmitted(true)
   }
 
@@ -50,9 +58,15 @@ export default function ForgotPasswordPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full bg-slate-900 text-white hover:bg-slate-800">
-              Send reset link
-              <ArrowRight className="w-4 h-4 ml-2" />
+            <Button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white hover:bg-slate-800">
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  Send reset link
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
             </Button>
           </form>
         )}

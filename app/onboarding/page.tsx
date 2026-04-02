@@ -5,11 +5,12 @@ import type React from "react"
 import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, ChevronLeft, Upload, FileText, Check, Loader2 } from "lucide-react"
+import { ArrowRight, ChevronLeft, Upload, FileText, Check, Loader2, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { setUserItem } from "@/lib/user-storage"
 import { parseDocument, parseResumeText } from "@/lib/document-parser"
+import { supabase } from "@/lib/supabase-browser"
 
 interface OnboardingData {
   targetRole: string
@@ -47,6 +48,15 @@ export default function OnboardingPage() {
   const [isParsingFile, setIsParsingFile] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const polishFileInputRef = useRef<HTMLInputElement>(null)
+  const [pendingUploadMode, setPendingUploadMode] = useState<"upload" | "upload_polish" | null>(null)
+
+  const supportedExtensions = ["pdf", "docx", "txt"]
+  const supportedTypes = [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+  ]
 
   const handleRoleSelect = (role: string) => {
     setData((prev) => ({ ...prev, targetRole: role }))
@@ -66,8 +76,18 @@ export default function OnboardingPage() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const ext = file.name.toLowerCase().split(".").pop() || ""
+    const isSupported = supportedExtensions.includes(ext) || supportedTypes.includes(file.type)
+    if (!isSupported) {
+      setParseError("Unsupported file type. Please upload a PDF, DOCX, or TXT file.")
+      return
+    }
+
     setIsParsingFile(true)
     setParseError(null)
+
+    // Use the pending mode to determine which option was clicked
+    const mode = pendingUploadMode || "upload"
 
     try {
       // Parse the document
@@ -78,7 +98,7 @@ export default function OnboardingPage() {
 
       setData((prev) => ({
         ...prev,
-        startOption: "upload",
+        startOption: mode,
         uploadedFile: file,
         parsedContent: resumeContent,
       }))
@@ -93,29 +113,58 @@ export default function OnboardingPage() {
       }))
     } finally {
       setIsParsingFile(false)
+      setPendingUploadMode(null)
     }
   }
 
   const handleUploadClick = () => {
+    setPendingUploadMode("upload")
     fileInputRef.current?.click()
   }
 
-  const handleNext = () => {
+  const handlePolishUploadClick = () => {
+    setPendingUploadMode("upload_polish")
+    polishFileInputRef.current?.click()
+  }
+
+  const handleNext = async () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep((prev) => prev + 1)
     } else {
       setUserItem("polish_target_role", data.targetRole)
       setUserItem("polish_onboarding", JSON.stringify(data))
 
-      // Save parsed content for editor to load
       if (data.parsedContent) {
         setUserItem("polish_uploaded_content", JSON.stringify(data.parsedContent))
         setUserItem("polish_uploaded_filename", data.uploadedFile?.name || "")
+        // If "Upload & polish" was selected, set the reformat flag
+        if (data.startOption === "upload_polish") {
+          setUserItem("polish_reformat", "true")
+        }
       } else {
-        // Clear any previous uploaded content if starting fresh
-        setUserItem("polish_uploaded_content", "")
+        // "Start fresh": store an explicit blank template so the editor
+        // doesn't fall through to stale Supabase / localStorage data.
+        const blank = {
+          name: "",
+          title: "",
+          contact: "",
+          education: [{ school: "", degree: "", location: "", period: "" }],
+          experience: [{ role: "", company: "", location: "", period: "", bullets: [""] }],
+          projects: [],
+          leadership: [],
+          skills: "",
+        }
+        setUserItem("polish_uploaded_content", JSON.stringify(blank))
         setUserItem("polish_uploaded_filename", "")
       }
+
+      // Persist target role and onboarding flag to Supabase user_metadata
+      await supabase.auth.updateUser({
+        data: {
+          target_role: data.targetRole,
+          onboarded: true,
+        },
+      })
 
       router.push("/editor")
     }
@@ -132,7 +181,7 @@ export default function OnboardingPage() {
       case 0:
         return data.targetRole.trim().length > 0
       case 1:
-        return data.startOption !== null
+        return data.startOption !== null && data.startOption !== "pending"
       default:
         return false
     }
@@ -188,69 +237,125 @@ export default function OnboardingPage() {
 
       case 1:
         return (
-          <div className="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto">
+          <div className="flex flex-col gap-4 max-w-2xl mx-auto">
             <input
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept=".pdf,.doc,.docx,.txt"
+              accept=".pdf,.docx,.txt"
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={polishFileInputRef}
+              onChange={handleFileChange}
+              accept=".pdf,.docx,.txt"
               className="hidden"
             />
 
-            {/* Upload option */}
-            <button
-              onClick={handleUploadClick}
-              disabled={isParsingFile}
-              className={cn(
-                "flex-1 flex flex-col items-center gap-4 p-8 rounded-2xl border-2 transition-all duration-200",
-                "hover:border-slate-400 hover:shadow-sm",
-                isParsingFile && "opacity-70 cursor-wait",
-                data.startOption === "upload" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white",
-              )}
-            >
-              <div
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Upload & polish option (primary) */}
+              <button
+                onClick={handlePolishUploadClick}
+                disabled={isParsingFile}
                 className={cn(
-                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-colors",
-                  data.startOption === "upload" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600",
+                  "flex-1 flex flex-col items-center gap-4 p-8 rounded-2xl border-2 transition-all duration-200",
+                  "hover:border-slate-400 hover:shadow-sm",
+                  isParsingFile && pendingUploadMode === "upload_polish" && "opacity-70 cursor-wait",
+                  data.startOption === "upload_polish" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white",
                 )}
               >
-                {isParsingFile ? <Loader2 className="w-6 h-6 animate-spin" /> : <Upload className="w-6 h-6" />}
-              </div>
-              <div className="text-center">
-                <span className="font-semibold text-slate-900 block text-lg">
-                  {isParsingFile ? "Parsing..." : "Upload resume"}
-                </span>
-                <span className="text-sm text-slate-500">
-                  {data.uploadedFile ? data.uploadedFile.name : "PDF, DOCX, or TXT"}
-                </span>
-                {parseError && <span className="text-sm text-red-500 block mt-1">{parseError}</span>}
-              </div>
-              {data.startOption === "upload" && !isParsingFile && <Check className="w-5 h-5 text-slate-900" />}
-            </button>
+                <div
+                  className={cn(
+                    "w-14 h-14 rounded-2xl flex items-center justify-center transition-colors",
+                    data.startOption === "upload_polish" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600",
+                  )}
+                >
+                  {isParsingFile && pendingUploadMode === "upload_polish" ? (
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="text-center">
+                  <span className="font-semibold text-slate-900 block text-lg">
+                    {isParsingFile && pendingUploadMode === "upload_polish" ? "Parsing..." : "Upload & polish"}
+                  </span>
+                  <span className="text-sm text-slate-500">
+                    {data.startOption === "upload_polish" && data.uploadedFile
+                      ? data.uploadedFile.name
+                      : "AI rewrites your bullets & formatting"}
+                  </span>
+                  {parseError && pendingUploadMode === "upload_polish" && (
+                    <span className="text-sm text-red-500 block mt-1">{parseError}</span>
+                  )}
+                </div>
+                {data.startOption === "upload_polish" && !isParsingFile && <Check className="w-5 h-5 text-slate-900" />}
+              </button>
 
-            {/* Start fresh option */}
-            <button
-              onClick={() => handleStartOptionSelect("scratch")}
-              className={cn(
-                "flex-1 flex flex-col items-center gap-4 p-8 rounded-2xl border-2 transition-all duration-200",
-                "hover:border-slate-400 hover:shadow-sm",
-                data.startOption === "scratch" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white",
-              )}
-            >
-              <div
+              {/* Upload as-is option */}
+              <button
+                onClick={handleUploadClick}
+                disabled={isParsingFile}
                 className={cn(
-                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-colors",
-                  data.startOption === "scratch" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600",
+                  "flex-1 flex flex-col items-center gap-4 p-8 rounded-2xl border-2 transition-all duration-200",
+                  "hover:border-slate-400 hover:shadow-sm",
+                  isParsingFile && pendingUploadMode === "upload" && "opacity-70 cursor-wait",
+                  data.startOption === "upload" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white",
                 )}
               >
-                <FileText className="w-6 h-6" />
-              </div>
-              <div className="text-center">
-                <span className="font-semibold text-slate-900 block text-lg">Start fresh</span>
-                <span className="text-sm text-slate-500">Build from scratch</span>
-              </div>
-              {data.startOption === "scratch" && <Check className="w-5 h-5 text-slate-900" />}
-            </button>
+                <div
+                  className={cn(
+                    "w-14 h-14 rounded-2xl flex items-center justify-center transition-colors",
+                    data.startOption === "upload" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600",
+                  )}
+                >
+                  {isParsingFile && pendingUploadMode === "upload" ? (
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  ) : (
+                    <Upload className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="text-center">
+                  <span className="font-semibold text-slate-900 block text-lg">
+                    {isParsingFile && pendingUploadMode === "upload" ? "Parsing..." : "Upload resume"}
+                  </span>
+                  <span className="text-sm text-slate-500">
+                    {data.startOption === "upload" && data.uploadedFile
+                      ? data.uploadedFile.name
+                      : "Edit your existing resume directly"}
+                  </span>
+                  {parseError && pendingUploadMode === "upload" && (
+                    <span className="text-sm text-red-500 block mt-1">{parseError}</span>
+                  )}
+                </div>
+                {data.startOption === "upload" && !isParsingFile && <Check className="w-5 h-5 text-slate-900" />}
+              </button>
+
+              {/* Start fresh option */}
+              <button
+                onClick={() => handleStartOptionSelect("scratch")}
+                className={cn(
+                  "flex-1 flex flex-col items-center gap-4 p-8 rounded-2xl border-2 transition-all duration-200",
+                  "hover:border-slate-400 hover:shadow-sm",
+                  data.startOption === "scratch" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white",
+                )}
+              >
+                <div
+                  className={cn(
+                    "w-14 h-14 rounded-2xl flex items-center justify-center transition-colors",
+                    data.startOption === "scratch" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600",
+                  )}
+                >
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div className="text-center">
+                  <span className="font-semibold text-slate-900 block text-lg">Start fresh</span>
+                  <span className="text-sm text-slate-500">AI builds your resume from a description</span>
+                </div>
+                {data.startOption === "scratch" && <Check className="w-5 h-5 text-slate-900" />}
+              </button>
+            </div>
           </div>
         )
 

@@ -19,19 +19,19 @@ import {
   Shield,
   FileType,
   ChevronUp,
+  Settings,
 } from "lucide-react"
-import Link from "next/link"
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { GuideModal } from "@/components/guide-modal"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import Link from "next/link"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { GuideModal } from "@/components/guide-modal"
 import { clearUserData } from "@/lib/user-storage"
 import { signOut as supabaseSignOut } from "@/lib/supabase-browser"
 
@@ -289,16 +289,13 @@ export default function LandingPage() {
 
   const handleOpenEditor = () => {
     if (user) {
-      router.push("/editor")
+      router.push("/dashboard")
     } else {
       router.push("/signin")
     }
   }
 
-  const [isSigningOut, setIsSigningOut] = useState(false)
-
   const handleSignOut = async () => {
-    setIsSigningOut(true)
     clearUserData()
     sessionStorage.clear()
     setUser(null)
@@ -369,10 +366,10 @@ export default function LandingPage() {
       }}
     >
       <a
-        href="/editor"
+        href="/dashboard"
         className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-slate-900 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg"
       >
-        Skip to editor
+        Skip to dashboard
       </a>
 
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-transparent to-slate-100/40"></div>
@@ -394,36 +391,29 @@ export default function LandingPage() {
                 Guide
               </Button>
               {user ? (
-                <Link href="/dashboard">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg"
-                  >
-                    Dashboard
-                  </Button>
-                </Link>
-              ) : null}
-              {user ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2 cursor-pointer transition-colors"
-                      disabled={isSigningOut}
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2"
                     >
                       <User className="w-4 h-4" />
-                      {isSigningOut ? "Signing out..." : user.name}
+                      <span className="max-w-[120px] truncate">{user.name}</span>
                       <ChevronDown className="w-3 h-3" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuLabel className="text-slate-500 font-normal text-xs truncate">
+                    <DropdownMenuItem className="text-slate-600 cursor-default truncate max-w-full">
                       {user.email}
-                    </DropdownMenuLabel>
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut} variant="destructive" className="cursor-pointer">
+                    <DropdownMenuItem onSelect={() => router.push("/profile")} className="cursor-pointer">
+                      <Settings className="w-4 h-4 mr-2" />
+                      Profile & Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut} className="text-red-600 cursor-pointer">
                       <LogOut className="w-4 h-4 mr-2" />
                       Sign Out
                     </DropdownMenuItem>
@@ -431,12 +421,12 @@ export default function LandingPage() {
                 </DropdownMenu>
               ) : null}
               {user ? (
-                <Link href="/editor">
+                <Link href="/dashboard">
                   <Button
                     size="sm"
                     className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
                   >
-                    Open Editor
+                    Dashboard
                   </Button>
                 </Link>
               ) : (
@@ -473,17 +463,6 @@ export default function LandingPage() {
               >
                 Guide
               </Button>
-              {user ? (
-                <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg w-full justify-start mt-2"
-                  >
-                    Dashboard
-                  </Button>
-                </Link>
-              ) : null}
             </div>
             <div className="p-4">
               {user ? (
@@ -493,15 +472,24 @@ export default function LandingPage() {
                     <span className="text-sm text-slate-600 font-medium">{user.name}</span>
                   </div>
                   <span className="text-xs text-slate-400 px-2 truncate">{user.email}</span>
+                  <Link href="/profile" onClick={() => setMobileMenuOpen(false)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-medium rounded-lg w-full justify-start"
+                    >
+                      <Settings className="w-4 h-4 mr-2" />
+                      Profile & Settings
+                    </Button>
+                  </Link>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
-                    disabled={isSigningOut}
                     className="text-red-600 hover:text-red-700 hover:bg-red-50 font-medium rounded-lg w-full justify-start"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
-                    {isSigningOut ? "Signing out..." : "Sign Out"}
+                    Sign Out
                   </Button>
                 </div>
               ) : null}
@@ -509,12 +497,12 @@ export default function LandingPage() {
             <div className="p-4">
               {user ? (
                 <>
-                  <Link href="/editor" className="w-full" onClick={() => setMobileMenuOpen(false)}>
+                  <Link href="/dashboard" className="w-full" onClick={() => setMobileMenuOpen(false)}>
                     <Button
                       size="sm"
                       className="bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-lg opacity-100 rounded-lg border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 w-full justify-start"
                     >
-                      Open Editor
+                      Dashboard
                     </Button>
                   </Link>
                 </>
@@ -634,13 +622,13 @@ export default function LandingPage() {
 
             {/* CTA buttons */}
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-6">
-              <Link href={user ? "/editor" : "/signup"}>
+              <Link href={user ? "/dashboard" : "/signup"}>
                 <Button
                   size="lg"
                   className="text-lg px-10 py-6 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold tracking-tight border-0 opacity-100 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-                  aria-label={user ? "Open the Polish editor to start editing your resume" : "Get started with Polish"}
+                  aria-label={user ? "Go to your dashboard" : "Get started with Polish"}
                 >
-                  {user ? "Open Editor" : "Get Started"}
+                  {user ? "Go to Dashboard" : "Get Started"}
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
@@ -1102,12 +1090,12 @@ export default function LandingPage() {
           <p className="text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
             Upload any format. Edit with Claude AI. Export to anything. All in your browser, all under your control.
           </p>
-          <Link href={user ? "/editor" : "/signup"}>
+          <Link href={user ? "/dashboard" : "/signup"}>
             <Button
               size="lg"
               className="text-lg px-10 py-6 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-semibold tracking-tight border-0 focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
             >
-              {user ? "Open Editor" : "Get Started Free"}
+              {user ? "Go to Dashboard" : "Get Started Free"}
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </Link>

@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClaudeClient, chatWithTools } from "@/lib/claude-client"
-import type { DocumentContent } from "@/lib/claude-client"
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,13 +21,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
     }
 
-    // Create Claude client and chat with MCP tools
+    // Create Claude client and chat
     const client = createClaudeClient(apiKey)
     const result = await chatWithTools(
       client,
       message,
       selectedText,
-      documentContent as DocumentContent,
+      documentContent,
     )
 
     return NextResponse.json(result)

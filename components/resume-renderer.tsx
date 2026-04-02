@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useCallback } from "react"
 import { Card } from "@/components/ui/card"
 
 interface DocumentContent {
@@ -120,11 +121,105 @@ interface ResumeRendererProps {
   template: TemplateName
   onMouseUp: (e: React.MouseEvent) => void
   isTextHighlighted: (text: string) => boolean
+  onContentChange?: (content: DocumentContent) => void
 }
 
-export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHighlighted }: ResumeRendererProps) {
+function EditableSpan({
+  value,
+  onCommit,
+  className,
+  placeholder,
+  tag: Tag = "span",
+  onEnter,
+  onDeleteEmpty,
+}: {
+  value: string
+  onCommit: (v: string) => void
+  className?: string
+  placeholder?: string
+  tag?: "span" | "div" | "h1" | "p" | "li"
+  onEnter?: () => void
+  onDeleteEmpty?: () => void
+}) {
+  const handleBlur = useCallback(
+    (e: React.FocusEvent<HTMLElement>) => {
+      const text = e.currentTarget.textContent ?? ""
+      if (text !== value) onCommit(text)
+    },
+    [value, onCommit],
+  )
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      // Commit current text first
+      const text = e.currentTarget.textContent ?? ""
+      if (text !== value) onCommit(text)
+      if (onEnter) {
+        onEnter()
+      } else {
+        e.currentTarget.blur()
+      }
+    }
+    if (e.key === "Backspace" && onDeleteEmpty) {
+      const text = e.currentTarget.textContent ?? ""
+      if (text === "") {
+        e.preventDefault()
+        onDeleteEmpty()
+      }
+    }
+  }, [value, onCommit, onEnter, onDeleteEmpty])
+
+  return (
+    <Tag
+      contentEditable
+      suppressContentEditableWarning
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className={`outline-none rounded-sm focus:ring-2 focus:ring-primary/30 focus:bg-primary/5 transition-colors cursor-text ${className ?? ""}`}
+      data-placeholder={placeholder}
+      style={!value ? { minWidth: "4rem", display: "inline-block" } : undefined}
+    >
+      {value}
+    </Tag>
+  )
+}
+
+export function ResumeRenderer({
+  documentContent,
+  template,
+  onMouseUp,
+  isTextHighlighted,
+  onContentChange,
+}: ResumeRendererProps) {
   const t = templates[template]
   const isModernBullet = t.bulletStyle === "list-none"
+
+  const update = useCallback(
+    (fn: (prev: DocumentContent) => DocumentContent) => {
+      onContentChange?.(fn(documentContent))
+    },
+    [documentContent, onContentChange],
+  )
+
+  const editable = !!onContentChange
+
+  const renderText = (
+    value: string,
+    commit: (v: string) => void,
+    className?: string,
+    placeholder?: string,
+    tag?: "span" | "div" | "h1" | "p" | "li",
+  ) => {
+    if (!editable) {
+      if (tag === "h1") return <h1 className={className}>{value}</h1>
+      if (tag === "p") return <p className={className}>{value}</p>
+      if (tag === "div") return <div className={className}>{value}</div>
+      if (tag === "li") return <li className={className}>{value}</li>
+      return <span className={className}>{value}</span>
+    }
+    return <EditableSpan value={value} onCommit={commit} className={className} placeholder={placeholder} tag={tag} />
+  }
 
   return (
     <div className="flex-1 p-3 sm:p-5 lg:p-8 overflow-auto bg-muted/20" onMouseUp={onMouseUp}>
@@ -134,9 +229,27 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
         <div className={t.sectionSpacing}>
           {/* Header Section */}
           <div id="section-header" className={t.headerStyle}>
-            <h1 className={`text-3xl font-bold mb-1 text-foreground ${t.headingFont}`}>{documentContent.name}</h1>
-            <p className="text-muted-foreground mb-1">{documentContent.title}</p>
-            <p className="text-sm text-muted-foreground">{documentContent.contact}</p>
+            {renderText(
+              documentContent.name,
+              (v) => update((p) => ({ ...p, name: v })),
+              `text-3xl font-bold mb-1 text-foreground ${t.headingFont}`,
+              "Your Name",
+              "h1",
+            )}
+            {renderText(
+              documentContent.title,
+              (v) => update((p) => ({ ...p, title: v })),
+              "text-muted-foreground mb-1",
+              "Job Title",
+              "p",
+            )}
+            {renderText(
+              documentContent.contact,
+              (v) => update((p) => ({ ...p, contact: v })),
+              "text-sm text-muted-foreground",
+              "email@example.com | (555) 123-4567",
+              "p",
+            )}
           </div>
 
           {/* Education Section */}
@@ -146,12 +259,52 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
               {documentContent.education.map((edu, idx) => (
                 <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:justify-between text-sm">
                   <div>
-                    <div className="font-semibold text-foreground">{edu.school}</div>
-                    <div className="text-muted-foreground">{edu.degree}</div>
+                    {renderText(
+                      edu.school,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          education: p.education.map((e, i) => (i === idx ? { ...e, school: v } : e)),
+                        })),
+                      "font-semibold text-foreground",
+                      "School Name",
+                      "div",
+                    )}
+                    {renderText(
+                      edu.degree,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          education: p.education.map((e, i) => (i === idx ? { ...e, degree: v } : e)),
+                        })),
+                      "text-muted-foreground",
+                      "Degree",
+                      "div",
+                    )}
                   </div>
                   <div className="text-left sm:text-right text-muted-foreground">
-                    <div>{edu.location}</div>
-                    <div>{edu.period}</div>
+                    {renderText(
+                      edu.location,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          education: p.education.map((e, i) => (i === idx ? { ...e, location: v } : e)),
+                        })),
+                      undefined,
+                      "Location",
+                      "div",
+                    )}
+                    {renderText(
+                      edu.period,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          education: p.education.map((e, i) => (i === idx ? { ...e, period: v } : e)),
+                        })),
+                      undefined,
+                      "Period",
+                      "div",
+                    )}
                   </div>
                 </div>
               ))}
@@ -165,67 +318,263 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
               {documentContent.experience.map((exp, idx) => (
                 <div key={idx}>
                   <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
-                    <div className="font-semibold text-foreground">{exp.role}</div>
-                    <div className="text-sm text-muted-foreground">{exp.period}</div>
+                    {renderText(
+                      exp.role,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          experience: p.experience.map((e, i) => (i === idx ? { ...e, role: v } : e)),
+                        })),
+                      "font-semibold text-foreground",
+                      "Role Title",
+                      "div",
+                    )}
+                    {renderText(
+                      exp.period,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          experience: p.experience.map((e, i) => (i === idx ? { ...e, period: v } : e)),
+                        })),
+                      "text-sm text-muted-foreground",
+                      "Period",
+                      "div",
+                    )}
                   </div>
                   <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-2">
-                    <div className="text-sm text-muted-foreground italic">{exp.company}</div>
-                    <div className="text-sm text-muted-foreground italic">{exp.location}</div>
+                    {renderText(
+                      exp.company,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          experience: p.experience.map((e, i) => (i === idx ? { ...e, company: v } : e)),
+                        })),
+                      "text-sm text-muted-foreground italic",
+                      "Company",
+                      "div",
+                    )}
+                    {renderText(
+                      exp.location,
+                      (v) =>
+                        update((p) => ({
+                          ...p,
+                          experience: p.experience.map((e, i) => (i === idx ? { ...e, location: v } : e)),
+                        })),
+                      "text-sm text-muted-foreground italic",
+                      "Location",
+                      "div",
+                    )}
                   </div>
                   <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
-                    {exp.bullets.map((bullet, bidx) => (
-                      <li
-                        key={bidx}
-                        className={`transition-all duration-300 ${
-                          isModernBullet ? "pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-muted-foreground" : ""
-                        } ${
-                          isTextHighlighted(bullet)
-                            ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1"
-                            : ""
-                        }`}
-                      >
-                        {bullet}
-                      </li>
-                    ))}
+                    {exp.bullets.map((bullet, bidx) => {
+                      const highlighted = isTextHighlighted(bullet)
+                      const bulletCls = `transition-all duration-300 ${
+                        isModernBullet
+                          ? "pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-muted-foreground"
+                          : ""
+                      } ${highlighted ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1" : ""}`
+
+                      if (!editable) {
+                        return (
+                          <li key={bidx} className={bulletCls}>
+                            {bullet}
+                          </li>
+                        )
+                      }
+
+                      return (
+                        <EditableSpan
+                          key={bidx}
+                          tag="li"
+                          value={bullet}
+                          onCommit={(v) =>
+                            update((p) => ({
+                              ...p,
+                              experience: p.experience.map((e, i) =>
+                                i === idx
+                                  ? { ...e, bullets: e.bullets.map((b, bi) => (bi === bidx ? v : b)) }
+                                  : e,
+                              ),
+                            }))
+                          }
+                          onEnter={() =>
+                            update((p) => ({
+                              ...p,
+                              experience: p.experience.map((e, i) =>
+                                i === idx
+                                  ? { ...e, bullets: [...e.bullets.slice(0, bidx + 1), "", ...e.bullets.slice(bidx + 1)] }
+                                  : e,
+                              ),
+                            }))
+                          }
+                          onDeleteEmpty={() =>
+                            update((p) => ({
+                              ...p,
+                              experience: p.experience.map((e, i) =>
+                                i === idx
+                                  ? { ...e, bullets: e.bullets.length > 1 ? e.bullets.filter((_, bi) => bi !== bidx) : e.bullets }
+                                  : e,
+                              ),
+                            }))
+                          }
+                          className={bulletCls}
+                          placeholder="Add bullet point..."
+                        />
+                      )
+                    })}
                   </ul>
+                  {editable && (
+                    <button
+                      onClick={() =>
+                        update((p) => ({
+                          ...p,
+                          experience: p.experience.map((e, i) =>
+                            i === idx ? { ...e, bullets: [...e.bullets, ""] } : e,
+                          ),
+                        }))
+                      }
+                      className="text-xs text-muted-foreground hover:text-foreground mt-1 opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
+                    >
+                      + Add bullet
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
           </div>
 
           {/* Projects Section */}
-          <div id="section-projects">
-            <h2 className={`${t.headingStyle} ${t.headingBorder} mb-3`}>Projects</h2>
-            <div className="space-y-4">
-              {documentContent.projects.map((proj, idx) => (
-                <div key={idx}>
-                  <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
-                    <div className="font-semibold text-foreground">
-                      {proj.name}{" "}
-                      <span className={`font-normal ${t.accentColor} text-sm`}>| {proj.tech}</span>
+          {documentContent.projects.length > 0 && (
+            <div id="section-projects">
+              <h2 className={`${t.headingStyle} ${t.headingBorder} mb-3`}>Projects</h2>
+              <div className="space-y-4">
+                {documentContent.projects.map((proj, idx) => (
+                  <div key={idx}>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
+                      <div className="font-semibold text-foreground">
+                        {editable ? (
+                          <>
+                            <EditableSpan
+                              value={proj.name}
+                              onCommit={(v) =>
+                                update((p) => ({
+                                  ...p,
+                                  projects: p.projects.map((pr, i) => (i === idx ? { ...pr, name: v } : pr)),
+                                }))
+                              }
+                              placeholder="Project Name"
+                            />{" "}
+                            <span className={`font-normal ${t.accentColor} text-sm`}>
+                              |{" "}
+                              <EditableSpan
+                                value={proj.tech}
+                                onCommit={(v) =>
+                                  update((p) => ({
+                                    ...p,
+                                    projects: p.projects.map((pr, i) => (i === idx ? { ...pr, tech: v } : pr)),
+                                  }))
+                                }
+                                placeholder="Technologies"
+                              />
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {proj.name}{" "}
+                            <span className={`font-normal ${t.accentColor} text-sm`}>| {proj.tech}</span>
+                          </>
+                        )}
+                      </div>
+                      {renderText(
+                        proj.period,
+                        (v) =>
+                          update((p) => ({
+                            ...p,
+                            projects: p.projects.map((pr, i) => (i === idx ? { ...pr, period: v } : pr)),
+                          })),
+                        "text-sm text-muted-foreground sm:text-right",
+                        "Period",
+                        "div",
+                      )}
                     </div>
-                    <div className="text-sm text-muted-foreground sm:text-right">{proj.period}</div>
-                  </div>
-                  <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
-                    {proj.bullets.map((bullet, bidx) => (
-                      <li
-                        key={bidx}
-                        className={`transition-all duration-300 ${
-                          isModernBullet ? "pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-muted-foreground" : ""
-                        } ${
-                          isTextHighlighted(bullet)
-                            ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1"
+                    <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
+                      {proj.bullets.map((bullet, bidx) => {
+                        const highlighted = isTextHighlighted(bullet)
+                        const bulletCls = `transition-all duration-300 ${
+                          isModernBullet
+                            ? "pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-muted-foreground"
                             : ""
-                        }`}
+                        } ${highlighted ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1" : ""}`
+
+                        if (!editable) {
+                          return (
+                            <li key={bidx} className={bulletCls}>
+                              {bullet}
+                            </li>
+                          )
+                        }
+
+                        return (
+                          <EditableSpan
+                            key={bidx}
+                            tag="li"
+                            value={bullet}
+                            onCommit={(v) =>
+                              update((p) => ({
+                                ...p,
+                                projects: p.projects.map((pr, i) =>
+                                  i === idx
+                                    ? { ...pr, bullets: pr.bullets.map((b, bi) => (bi === bidx ? v : b)) }
+                                    : pr,
+                                ),
+                              }))
+                            }
+                            onEnter={() =>
+                              update((p) => ({
+                                ...p,
+                                projects: p.projects.map((pr, i) =>
+                                  i === idx
+                                    ? { ...pr, bullets: [...pr.bullets.slice(0, bidx + 1), "", ...pr.bullets.slice(bidx + 1)] }
+                                    : pr,
+                                ),
+                              }))
+                            }
+                            onDeleteEmpty={() =>
+                              update((p) => ({
+                                ...p,
+                                projects: p.projects.map((pr, i) =>
+                                  i === idx
+                                    ? { ...pr, bullets: pr.bullets.length > 1 ? pr.bullets.filter((_, bi) => bi !== bidx) : pr.bullets }
+                                    : pr,
+                                ),
+                              }))
+                            }
+                            className={bulletCls}
+                            placeholder="Add bullet point..."
+                          />
+                        )
+                      })}
+                    </ul>
+                    {editable && (
+                      <button
+                        onClick={() =>
+                          update((p) => ({
+                            ...p,
+                            projects: p.projects.map((pr, i) =>
+                              i === idx ? { ...pr, bullets: [...pr.bullets, ""] } : pr,
+                            ),
+                          }))
+                        }
+                        className="text-xs text-muted-foreground hover:text-foreground mt-1 opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
                       >
-                        {bullet}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                        + Add bullet
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Leadership Section */}
           {documentContent.leadership && documentContent.leadership.length > 0 && (
@@ -235,29 +584,130 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                 {documentContent.leadership.map((lead, idx) => (
                   <div key={idx}>
                     <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-1">
-                      <div className="font-semibold text-foreground">{lead.role}</div>
-                      <div className="text-sm text-muted-foreground">{lead.period}</div>
+                      {renderText(
+                        lead.role,
+                        (v) =>
+                          update((p) => ({
+                            ...p,
+                            leadership: p.leadership?.map((l, i) => (i === idx ? { ...l, role: v } : l)),
+                          })),
+                        "font-semibold text-foreground",
+                        "Role",
+                        "div",
+                      )}
+                      {renderText(
+                        lead.period,
+                        (v) =>
+                          update((p) => ({
+                            ...p,
+                            leadership: p.leadership?.map((l, i) => (i === idx ? { ...l, period: v } : l)),
+                          })),
+                        "text-sm text-muted-foreground",
+                        "Period",
+                        "div",
+                      )}
                     </div>
                     <div className="flex flex-col gap-1 sm:flex-row sm:justify-between mb-2">
-                      <div className="text-sm text-muted-foreground italic">{lead.organization}</div>
-                      <div className="text-sm text-muted-foreground italic">{lead.location}</div>
+                      {renderText(
+                        lead.organization,
+                        (v) =>
+                          update((p) => ({
+                            ...p,
+                            leadership: p.leadership?.map((l, i) =>
+                              i === idx ? { ...l, organization: v } : l,
+                            ),
+                          })),
+                        "text-sm text-muted-foreground italic",
+                        "Organization",
+                        "div",
+                      )}
+                      {renderText(
+                        lead.location,
+                        (v) =>
+                          update((p) => ({
+                            ...p,
+                            leadership: p.leadership?.map((l, i) =>
+                              i === idx ? { ...l, location: v } : l,
+                            ),
+                          })),
+                        "text-sm text-muted-foreground italic",
+                        "Location",
+                        "div",
+                      )}
                     </div>
                     <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
-                      {lead.bullets.map((bullet, bidx) => (
-                        <li
-                          key={bidx}
-                          className={`transition-all duration-300 ${
-                            isModernBullet ? "pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-muted-foreground" : ""
-                          } ${
-                            isTextHighlighted(bullet)
-                              ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1"
-                              : ""
-                          }`}
-                        >
-                          {bullet}
-                        </li>
-                      ))}
+                      {lead.bullets.map((bullet, bidx) => {
+                        const highlighted = isTextHighlighted(bullet)
+                        const bulletCls = `transition-all duration-300 ${
+                          isModernBullet
+                            ? "pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-muted-foreground"
+                            : ""
+                        } ${highlighted ? "bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-2 py-1" : ""}`
+
+                        if (!editable) {
+                          return (
+                            <li key={bidx} className={bulletCls}>
+                              {bullet}
+                            </li>
+                          )
+                        }
+
+                        return (
+                          <EditableSpan
+                            key={bidx}
+                            tag="li"
+                            value={bullet}
+                            onCommit={(v) =>
+                              update((p) => ({
+                                ...p,
+                                leadership: p.leadership?.map((l, i) =>
+                                  i === idx
+                                    ? { ...l, bullets: l.bullets.map((b, bi) => (bi === bidx ? v : b)) }
+                                    : l,
+                                ),
+                              }))
+                            }
+                            onEnter={() =>
+                              update((p) => ({
+                                ...p,
+                                leadership: p.leadership?.map((l, i) =>
+                                  i === idx
+                                    ? { ...l, bullets: [...l.bullets.slice(0, bidx + 1), "", ...l.bullets.slice(bidx + 1)] }
+                                    : l,
+                                ),
+                              }))
+                            }
+                            onDeleteEmpty={() =>
+                              update((p) => ({
+                                ...p,
+                                leadership: p.leadership?.map((l, i) =>
+                                  i === idx
+                                    ? { ...l, bullets: l.bullets.length > 1 ? l.bullets.filter((_, bi) => bi !== bidx) : l.bullets }
+                                    : l,
+                                ),
+                              }))
+                            }
+                            className={bulletCls}
+                            placeholder="Add bullet point..."
+                          />
+                        )
+                      })}
                     </ul>
+                    {editable && (
+                      <button
+                        onClick={() =>
+                          update((p) => ({
+                            ...p,
+                            leadership: p.leadership?.map((l, i) =>
+                              i === idx ? { ...l, bullets: [...l.bullets, ""] } : l,
+                            ),
+                          }))
+                        }
+                        className="text-xs text-muted-foreground hover:text-foreground mt-1 opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
+                      >
+                        + Add bullet
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -280,6 +730,13 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                     )
                   })}
                 </div>
+              ) : editable ? (
+                <EditableSpan
+                  tag="div"
+                  value={documentContent.skills}
+                  onCommit={(v) => update((p) => ({ ...p, skills: v }))}
+                  placeholder="Languages: ... | Frameworks: ... | Tools: ..."
+                />
               ) : (
                 documentContent.skills
               )}
