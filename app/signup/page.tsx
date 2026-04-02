@@ -46,7 +46,7 @@ export default function SignUp() {
     setError("")
 
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
       const name = email.split("@")[0]
       const res = await fetch(`${API_URL}/api/auth/register`, {
         method: "POST",

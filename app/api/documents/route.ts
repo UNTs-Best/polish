@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 export async function GET(request: NextRequest) {
   const token = request.headers.get("authorization")

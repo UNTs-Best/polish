@@ -12,7 +12,7 @@ model User {
   email      String  @unique
   hashedPw   String? @map("hashed_pw")
   firstName  String  @map("first_name")
-  lastName   String  @map("last_name")
+  lastName   String  @default("") @map("last_name")
   oauthProvider String? @map("oauth_provider")
 
   createdAt DateTime @default(now()) @map("created_at")
