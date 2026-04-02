@@ -5,10 +5,21 @@ import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Upload, X, Check, FileText, FileType, FileCode } from "lucide-react"
 import { Card } from "@/components/ui/card"
-import { parseDocument, type FormatLabel } from "@/lib/document-parser"
+import { parseDocument } from "@/lib/document-parser"
+
+type FormatLabel = "PDF" | "DOCX" | "RTF" | "TXT" | "LaTeX"
+
+function detectFormat(file: File): FormatLabel {
+  const ext = file.name.toLowerCase().split(".").pop() || ""
+  if (ext === "pdf") return "PDF"
+  if (ext === "docx" || ext === "doc") return "DOCX"
+  if (ext === "rtf") return "RTF"
+  if (ext === "tex" || ext === "latex") return "LaTeX"
+  return "TXT"
+}
 
 interface FileUploadProps {
-  onFileUpload: (file: File, content: string, format: FormatLabel) => void
+  onFileUpload: (file: File, content: string, format: string) => void
   onClose: () => void
 }
 
@@ -99,15 +110,16 @@ export function FileUpload({ onFileUpload, onClose }: FileUploadProps) {
     }, 100)
 
     try {
-      const parsed = await parseDocument(file)
-      setDetectedFormat(parsed.formatLabel)
+      const text = await parseDocument(file)
+      const format = detectFormat(file)
+      setDetectedFormat(format)
 
       clearInterval(progressInterval)
       setUploadProgress(100)
 
       await new Promise((resolve) => setTimeout(resolve, 600))
 
-      onFileUpload(file, parsed.text, parsed.formatLabel)
+      onFileUpload(file, text, format)
     } catch (err) {
       clearInterval(progressInterval)
       setIsUploading(false)
