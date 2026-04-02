@@ -785,6 +785,7 @@ function EditorPageInner() {
             template="classic"
             onMouseUp={handleMouseUp}
             isTextHighlighted={isTextHighlighted}
+            onUpdate={setDocumentContent}
           />
 
           {/* Inline Prompt Component */}
