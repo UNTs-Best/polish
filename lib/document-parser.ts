@@ -1,6 +1,36 @@
 "use client"
 
-export async function parseResumeText(file: File): Promise<string> {
+export type FormatLabel = "PDF" | "DOCX" | "RTF" | "TXT" | "LaTeX"
+
+export interface ParsedResumeContent {
+  name: string
+  title: string
+  contact: string
+  education: Array<{ school: string; degree: string; location: string; period: string }>
+  experience: Array<{ role: string; company: string; location: string; period: string; bullets: string[] }>
+  projects: Array<{ name: string; tech: string; period: string; bullets: string[] }>
+  leadership: Array<{ role: string; org: string; period: string; bullets: string[] }>
+  skills: string
+}
+
+function detectFormatLabel(file: File): FormatLabel {
+  const ext = file.name.toLowerCase().split(".").pop() || ""
+  const type = file.type.toLowerCase()
+
+  if (ext === "pdf" || type === "application/pdf") return "PDF"
+  if (
+    ext === "docx" ||
+    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) return "DOCX"
+  if (ext === "rtf" || type === "application/rtf" || type === "text/rtf") return "RTF"
+  if (ext === "tex" || ext === "latex" || type === "application/x-tex" || type === "application/x-latex") {
+    return "LaTeX"
+  }
+
+  return "TXT"
+}
+
+async function parseResumeFileText(file: File): Promise<string> {
   if (file.type === "text/plain") {
     return file.text()
   }
@@ -19,6 +49,36 @@ export async function parseResumeText(file: File): Promise<string> {
   throw new Error(`Unsupported file type: ${file.type}`)
 }
 
+function parseResumeTextContent(content: string): ParsedResumeContent {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const skillsLine = lines.find((line) => /^skills?:?/i.test(line))
+  const skills = skillsLine ? skillsLine.replace(/^skills?:?\s*/i, "") : ""
+
+  return {
+    name: lines[0] || "",
+    title: lines[1] || "",
+    contact: lines[2] || "",
+    education: [],
+    experience: [],
+    projects: [],
+    leadership: [],
+    skills,
+  }
+}
+
+export function parseResumeText(content: string): ParsedResumeContent
+export function parseResumeText(file: File): Promise<string>
+export function parseResumeText(input: File | string): Promise<string> | ParsedResumeContent {
+  if (typeof input === "string") {
+    return parseResumeTextContent(input)
+  }
+  return parseResumeFileText(input)
+}
+
 async function parsePdf(file: File): Promise<string> {
   const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist")
   GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.js`
@@ -31,8 +91,8 @@ async function parsePdf(file: File): Promise<string> {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
     const pageText = content.items
-      .filter((item): item is { str: string } => "str" in item)
-      .map((item) => item.str)
+      .map((item) => ("str" in item ? item.str : ""))
+      .filter(Boolean)
       .join(" ")
     pages.push(pageText)
   }
@@ -64,6 +124,10 @@ async function parseDocx(file: File): Promise<string> {
     .trim()
 }
 
-export async function parseDocument(file: File): Promise<string> {
-  return parseResumeText(file)
+export async function parseDocument(file: File): Promise<{ text: string; formatLabel: FormatLabel }> {
+  const text = await parseResumeFileText(file)
+  return {
+    text,
+    formatLabel: detectFormatLabel(file),
+  }
 }

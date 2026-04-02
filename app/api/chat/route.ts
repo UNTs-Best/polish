@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClaudeClient, chatWithTools } from "@/lib/claude-client"
-import type { DocumentContent } from "@/lib/mcp-tools"
+import type { DocumentContent } from "@/lib/claude-client"
 
 export async function POST(request: NextRequest) {
   try {

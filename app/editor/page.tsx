@@ -21,7 +21,7 @@ import { InlinePrompt } from "@/components/inline-prompt"
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
+import { type FormatLabel } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
 import { getUserItem, setUserItem, removeUserItem, clearUserData } from "@/lib/user-storage"
@@ -78,6 +78,24 @@ interface DocumentContent {
     bullets: string[]
   }>
   skills: string
+}
+
+function parseUploadedResumeContent(content: string) {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  return {
+    name: lines[0] || "",
+    title: lines[1] || "",
+    contact: lines[2] || "",
+    education: [] as DocumentContent["education"],
+    experience: [] as DocumentContent["experience"],
+    projects: [] as DocumentContent["projects"],
+    leadership: [] as DocumentContent["leadership"],
+    skills: "",
+  }
 }
 
 interface DocumentVersion {
@@ -519,7 +537,7 @@ export default function EditorPage() {
     setShowUploadDialog(false)
 
     // Parse the actual file content into structured resume data
-    const parsed = parseResumeText(content)
+    const parsed = parseUploadedResumeContent(content)
 
     setDocumentContent({
       name: parsed.name || "Your Name",
