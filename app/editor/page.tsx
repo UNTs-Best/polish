@@ -22,7 +22,6 @@ import { InlinePrompt } from "@/components/inline-prompt"
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { parseResumeText } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
 import { getUserItem, setUserItem, removeUserItem, clearUserData, getAccessToken } from "@/lib/user-storage"
@@ -534,19 +533,11 @@ function EditorPageInner() {
     setSourceFormat(format)
     setShowUploadDialog(false)
 
-    // Parse the actual file content into structured resume data
-    const parsed = parseResumeText(content)
-
-    setDocumentContent({
-      name: parsed.name || "Your Name",
-      title: parsed.title || "",
-      contact: parsed.contact || "",
-      education: parsed.education?.length ? parsed.education : [{ school: "", degree: "", location: "", period: "" }],
-      experience: parsed.experience || [],
-      projects: parsed.projects || [],
-      leadership: parsed.leadership || [],
-      skills: parsed.skills || "",
-    })
+    // content is already extracted text — store as skills until AI structures it
+    setDocumentContent((prev) => ({
+      ...prev,
+      skills: content,
+    }))
 
     createVersionSnapshot(`Uploaded file: ${file.name}`)
     setTimeout(() => {
