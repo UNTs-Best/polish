@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useRef, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 
 interface DocumentContent {
@@ -115,16 +116,72 @@ export function getTemplateOptions(): Array<{ value: TemplateName; label: string
   }))
 }
 
+// EditableText — internal component for inline contentEditable fields.
+// The caller (editor page) uses onUpdate to update documentContent state, which triggers autosave.
+interface EditableTextProps {
+  value: string
+  onChange: (val: string) => void
+  className?: string
+  multiline?: boolean
+}
+
+function EditableText({ value, onChange, className, multiline }: EditableTextProps) {
+  const ref = useRef<HTMLSpanElement>(null)
+
+  // Sync external value changes into the DOM only when the element is not focused,
+  // to avoid clobbering in-progress edits.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (document.activeElement === el) return
+    if (el.textContent !== value) {
+      el.textContent = value
+    }
+  }, [value])
+
+  const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
+    onChange(e.currentTarget.textContent || "")
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLSpanElement>) => {
+    if (!multiline && e.key === "Enter") {
+      e.preventDefault()
+      e.currentTarget.blur()
+    }
+  }
+
+  return (
+    <span
+      ref={ref}
+      contentEditable="true"
+      suppressContentEditableWarning={true}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      // dangerouslySetInnerHTML is used only for the initial render value.
+      // Subsequent updates are applied via the ref in useEffect above.
+      dangerouslySetInnerHTML={{ __html: value }}
+      className={`outline-none focus:bg-slate-50 rounded px-0.5 -mx-0.5 transition-colors${className ? ` ${className}` : ""}`}
+    />
+  )
+}
+
 interface ResumeRendererProps {
   documentContent: DocumentContent
   template: TemplateName
   onMouseUp: (e: React.MouseEvent) => void
   isTextHighlighted: (text: string) => boolean
+  onUpdate: (updated: DocumentContent) => void
 }
 
-export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHighlighted }: ResumeRendererProps) {
+export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHighlighted, onUpdate }: ResumeRendererProps) {
   const t = templates[template]
   const isModernBullet = t.bulletStyle === "list-none"
+
+  // Helper to produce a deep-copied DocumentContent with a top-level scalar field replaced.
+  const updateField = <K extends keyof DocumentContent>(field: K, val: DocumentContent[K]): DocumentContent => ({
+    ...documentContent,
+    [field]: val,
+  })
 
   return (
     <div className="flex-1 p-8 overflow-auto bg-muted/20" onMouseUp={onMouseUp}>
@@ -134,9 +191,24 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
         <div className={t.sectionSpacing}>
           {/* Header Section */}
           <div id="section-header" className={t.headerStyle}>
-            <h1 className={`text-3xl font-bold mb-1 text-foreground ${t.headingFont}`}>{documentContent.name}</h1>
-            <p className="text-muted-foreground mb-1">{documentContent.title}</p>
-            <p className="text-sm text-muted-foreground">{documentContent.contact}</p>
+            <h1 className={`text-3xl font-bold mb-1 text-foreground ${t.headingFont}`}>
+              <EditableText
+                value={documentContent.name}
+                onChange={(val) => onUpdate(updateField("name", val))}
+              />
+            </h1>
+            <p className="text-muted-foreground mb-1">
+              <EditableText
+                value={documentContent.title}
+                onChange={(val) => onUpdate(updateField("title", val))}
+              />
+            </p>
+            <p className="text-sm text-muted-foreground">
+              <EditableText
+                value={documentContent.contact}
+                onChange={(val) => onUpdate(updateField("contact", val))}
+              />
+            </p>
           </div>
 
           {/* Education Section */}
@@ -146,12 +218,52 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
               {documentContent.education.map((edu, idx) => (
                 <div key={idx} className="flex justify-between text-sm">
                   <div>
-                    <div className="font-semibold text-foreground">{edu.school}</div>
-                    <div className="text-muted-foreground">{edu.degree}</div>
+                    <div className="font-semibold text-foreground">
+                      <EditableText
+                        value={edu.school}
+                        onChange={(val) => {
+                          const education = documentContent.education.map((e, i) =>
+                            i === idx ? { ...e, school: val } : e
+                          )
+                          onUpdate({ ...documentContent, education })
+                        }}
+                      />
+                    </div>
+                    <div className="text-muted-foreground">
+                      <EditableText
+                        value={edu.degree}
+                        onChange={(val) => {
+                          const education = documentContent.education.map((e, i) =>
+                            i === idx ? { ...e, degree: val } : e
+                          )
+                          onUpdate({ ...documentContent, education })
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="text-right text-muted-foreground">
-                    <div>{edu.location}</div>
-                    <div>{edu.period}</div>
+                    <div>
+                      <EditableText
+                        value={edu.location}
+                        onChange={(val) => {
+                          const education = documentContent.education.map((e, i) =>
+                            i === idx ? { ...e, location: val } : e
+                          )
+                          onUpdate({ ...documentContent, education })
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <EditableText
+                        value={edu.period}
+                        onChange={(val) => {
+                          const education = documentContent.education.map((e, i) =>
+                            i === idx ? { ...e, period: val } : e
+                          )
+                          onUpdate({ ...documentContent, education })
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -165,12 +277,52 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
               {documentContent.experience.map((exp, idx) => (
                 <div key={idx}>
                   <div className="flex justify-between mb-1">
-                    <div className="font-semibold text-foreground">{exp.role}</div>
-                    <div className="text-sm text-muted-foreground">{exp.period}</div>
+                    <div className="font-semibold text-foreground">
+                      <EditableText
+                        value={exp.role}
+                        onChange={(val) => {
+                          const experience = documentContent.experience.map((e, i) =>
+                            i === idx ? { ...e, role: val } : e
+                          )
+                          onUpdate({ ...documentContent, experience })
+                        }}
+                      />
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <EditableText
+                        value={exp.period}
+                        onChange={(val) => {
+                          const experience = documentContent.experience.map((e, i) =>
+                            i === idx ? { ...e, period: val } : e
+                          )
+                          onUpdate({ ...documentContent, experience })
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between mb-2">
-                    <div className="text-sm text-muted-foreground italic">{exp.company}</div>
-                    <div className="text-sm text-muted-foreground italic">{exp.location}</div>
+                    <div className="text-sm text-muted-foreground italic">
+                      <EditableText
+                        value={exp.company}
+                        onChange={(val) => {
+                          const experience = documentContent.experience.map((e, i) =>
+                            i === idx ? { ...e, company: val } : e
+                          )
+                          onUpdate({ ...documentContent, experience })
+                        }}
+                      />
+                    </div>
+                    <div className="text-sm text-muted-foreground italic">
+                      <EditableText
+                        value={exp.location}
+                        onChange={(val) => {
+                          const experience = documentContent.experience.map((e, i) =>
+                            i === idx ? { ...e, location: val } : e
+                          )
+                          onUpdate({ ...documentContent, experience })
+                        }}
+                      />
+                    </div>
                   </div>
                   <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
                     {exp.bullets.map((bullet, bidx) => (
@@ -184,7 +336,18 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                             : ""
                         }`}
                       >
-                        {bullet}
+                        <EditableText
+                          value={bullet}
+                          multiline={true}
+                          onChange={(val) => {
+                            const experience = documentContent.experience.map((e, i) =>
+                              i === idx
+                                ? { ...e, bullets: e.bullets.map((b, bi) => (bi === bidx ? val : b)) }
+                                : e
+                            )
+                            onUpdate({ ...documentContent, experience })
+                          }}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -201,10 +364,39 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                 <div key={idx}>
                   <div className="flex justify-between mb-1">
                     <div className="font-semibold text-foreground">
-                      {proj.name}{" "}
-                      <span className={`font-normal ${t.accentColor} text-sm`}>| {proj.tech}</span>
+                      <EditableText
+                        value={proj.name}
+                        onChange={(val) => {
+                          const projects = documentContent.projects.map((p, i) =>
+                            i === idx ? { ...p, name: val } : p
+                          )
+                          onUpdate({ ...documentContent, projects })
+                        }}
+                      />{" "}
+                      <span className={`font-normal ${t.accentColor} text-sm`}>
+                        |{" "}
+                        <EditableText
+                          value={proj.tech}
+                          onChange={(val) => {
+                            const projects = documentContent.projects.map((p, i) =>
+                              i === idx ? { ...p, tech: val } : p
+                            )
+                            onUpdate({ ...documentContent, projects })
+                          }}
+                        />
+                      </span>
                     </div>
-                    <div className="text-sm text-muted-foreground">{proj.period}</div>
+                    <div className="text-sm text-muted-foreground">
+                      <EditableText
+                        value={proj.period}
+                        onChange={(val) => {
+                          const projects = documentContent.projects.map((p, i) =>
+                            i === idx ? { ...p, period: val } : p
+                          )
+                          onUpdate({ ...documentContent, projects })
+                        }}
+                      />
+                    </div>
                   </div>
                   <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
                     {proj.bullets.map((bullet, bidx) => (
@@ -218,7 +410,18 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                             : ""
                         }`}
                       >
-                        {bullet}
+                        <EditableText
+                          value={bullet}
+                          multiline={true}
+                          onChange={(val) => {
+                            const projects = documentContent.projects.map((p, i) =>
+                              i === idx
+                                ? { ...p, bullets: p.bullets.map((b, bi) => (bi === bidx ? val : b)) }
+                                : p
+                            )
+                            onUpdate({ ...documentContent, projects })
+                          }}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -235,12 +438,52 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                 {documentContent.leadership.map((lead, idx) => (
                   <div key={idx}>
                     <div className="flex justify-between mb-1">
-                      <div className="font-semibold text-foreground">{lead.role}</div>
-                      <div className="text-sm text-muted-foreground">{lead.period}</div>
+                      <div className="font-semibold text-foreground">
+                        <EditableText
+                          value={lead.role}
+                          onChange={(val) => {
+                            const leadership = documentContent.leadership!.map((l, i) =>
+                              i === idx ? { ...l, role: val } : l
+                            )
+                            onUpdate({ ...documentContent, leadership })
+                          }}
+                        />
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        <EditableText
+                          value={lead.period}
+                          onChange={(val) => {
+                            const leadership = documentContent.leadership!.map((l, i) =>
+                              i === idx ? { ...l, period: val } : l
+                            )
+                            onUpdate({ ...documentContent, leadership })
+                          }}
+                        />
+                      </div>
                     </div>
                     <div className="flex justify-between mb-2">
-                      <div className="text-sm text-muted-foreground italic">{lead.organization}</div>
-                      <div className="text-sm text-muted-foreground italic">{lead.location}</div>
+                      <div className="text-sm text-muted-foreground italic">
+                        <EditableText
+                          value={lead.organization}
+                          onChange={(val) => {
+                            const leadership = documentContent.leadership!.map((l, i) =>
+                              i === idx ? { ...l, organization: val } : l
+                            )
+                            onUpdate({ ...documentContent, leadership })
+                          }}
+                        />
+                      </div>
+                      <div className="text-sm text-muted-foreground italic">
+                        <EditableText
+                          value={lead.location}
+                          onChange={(val) => {
+                            const leadership = documentContent.leadership!.map((l, i) =>
+                              i === idx ? { ...l, location: val } : l
+                            )
+                            onUpdate({ ...documentContent, leadership })
+                          }}
+                        />
+                      </div>
                     </div>
                     <ul className={`${t.bulletStyle} text-sm space-y-1 text-foreground/80`}>
                       {lead.bullets.map((bullet, bidx) => (
@@ -254,7 +497,18 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                               : ""
                           }`}
                         >
-                          {bullet}
+                          <EditableText
+                            value={bullet}
+                            multiline={true}
+                            onChange={(val) => {
+                              const leadership = documentContent.leadership!.map((l, i) =>
+                                i === idx
+                                  ? { ...l, bullets: l.bullets.map((b, bi) => (bi === bidx ? val : b)) }
+                                  : l
+                              )
+                              onUpdate({ ...documentContent, leadership })
+                            }}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -281,7 +535,11 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                   })}
                 </div>
               ) : (
-                documentContent.skills
+                <EditableText
+                  value={documentContent.skills}
+                  multiline={true}
+                  onChange={(val) => onUpdate(updateField("skills", val))}
+                />
               )}
             </div>
           </div>
