@@ -9,7 +9,7 @@ import { ArrowRight, ChevronLeft, Upload, FileText, Check, Loader2 } from "lucid
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { setUserItem, getAccessToken } from "@/lib/user-storage"
-import { parseDocument, parseResumeText } from "@/lib/document-parser"
+import { parseDocument } from "@/lib/document-parser"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -72,17 +72,14 @@ export default function OnboardingPage() {
     setParseError(null)
 
     try {
-      // Parse the document
-      const parsed = await parseDocument(file)
-
-      // Convert to structured resume content
-      const resumeContent = parseResumeText(parsed.text)
+      // Parse the document to raw text
+      const parsedText = await parseDocument(file)
 
       setData((prev) => ({
         ...prev,
         startOption: "upload",
         uploadedFile: file,
-        parsedContent: resumeContent,
+        parsedContent: parsedText,
       }))
     } catch (error) {
       console.error("[v0] File parsing error:", error)
