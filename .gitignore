@@ -1,9 +1,32 @@
-.claude
-./app/node_modules
-./server/node_modules
+# ── Dependencies ─────────────────────────────────────
+node_modules/
+server/node_modules/
 
+# ── Environment ───────────────────────────────────────
 .env
-.DS_Store
+.env.local
+.env.*.local
 
-!README.md
-!*/CONTRIBUTING.md
+# ── Next.js ──────────────────────────────────────────
+.next/
+out/
+
+# ── Build outputs ────────────────────────────────────
+server/dist/
+
+
+# ── Logs ─────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── OS ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── Claude ───────────────────────────────────────────
+.claude/

@@ -3,33 +3,61 @@ generator client {
 }
 
 datasource db {
-  provider =  "postgresql"
-  url      = env("DATABASE_URL") // TODO : put database url in the env file. 
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  userId      String    @id @default(dbgenerated("gen_randon_uuid()"))  @db.Uuid
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email      String  @unique
+  hashedPw   String? @map("hashed_pw")
+  firstName  String  @map("first_name")
+  lastName   String  @map("last_name")
+  oauthProvider String? @map("oauth_provider")
 
-  email       String    @unique
-  hashedpw    String    @unique
-  firstName   String    
-  lastName    String      
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sessions       Session[]
+  documents      Document[]
+  versions       Version[]
+  aiInteractions AiInteraction[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  token        String?  @unique
+  refreshToken String?  @unique @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
 }
 
 model Document {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId       String    @map("user_id") @db.Uuid
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String  @map("user_id") @db.Uuid
   title        String
-  content      String    @default("")
-  documentType String?   @map("document_type")
+  content      String  @default("")
+  documentType String? @map("document_type")
 
-  fileName     String?   @map("file_name")
-  fileUrl      String?   @map("file_url")
-  fileSize     Int?      @map("file_size")
-  mimeType     String?   @map("mime_type")
+  fileName String? @map("file_name")
+  fileUrl  String? @map("file_url")
+  fileSize Int?    @map("file_size")
+  mimeType String? @map("mime_type")
 
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   versions       Version[]
@@ -42,35 +70,17 @@ model Document {
 model Version {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   documentId    String   @map("document_id") @db.Uuid
+  createdBy     String?  @map("created_by") @db.Uuid
   versionNumber Int      @map("version_number")
   content       String   @default("")
-  changeSummary String?  @map("change_summary") // just add diff
-  // createdBy     String?  @map("created_by") @db.Uuid
-  // createdAt     DateTime @default(now()) @map("created_at")
+  changeSummary String?  @map("change_summary")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   author   User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
 
   @@index([documentId])
   @@map("versions")
-}
-
-model Session {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
-  token        String?
-  refreshToken String?  @map("refresh_token")
-  userAgent    String?  @map("user_agent")
-  ipAddress    String?  @map("ip_address")
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  expiresAt    DateTime @map("expires_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([refreshToken])
-  @@map("sessions")
 }
 
 model AiInteraction {
