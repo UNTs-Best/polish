@@ -3,7 +3,7 @@ import { env } from '../config/env.js'
 import { prisma } from '../config/db.js'
 
 const genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY)
-const MODEL = 'gemini-2.5-flash-preview-04-17'
+const MODEL = 'gemini-2.0-flash'
 
 async function generate(prompt: string): Promise<{ text: string; tokens: number }> {
   const model = genAI.getGenerativeModel({ model: MODEL })
