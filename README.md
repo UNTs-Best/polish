@@ -1,78 +1,100 @@
-# Polish - AI-Powered Document Editor
+# Polish — AI-Powered Resume Editor
 
-## Overview
+Polish is a full-stack web application that uses AI to help users write, edit, and improve their resumes. Upload an existing resume or start from scratch, get real-time AI suggestions powered by Gemini, track version history, and export when ready.
 
-Polish is a modern web application that leverages artificial intelligence to help users create, edit, and polish professional documents like resumes, cover letters, and other business documents. The app features real time inline editing capabilities and seamless export functionality to multiple formats.
+## Tech Stack
+
+**Frontend**
+- Next.js 14 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui
+
+**Backend**
+- Express.js, TypeScript, Prisma ORM, PostgreSQL, Redis
+- Gemini 2.5 Flash for AI suggestions, scoring, and summarization
+- JWT authentication (access + refresh tokens)
+
+**Infrastructure**
+- Docker (both services)
+- Railway (frontend + backend + PostgreSQL + Redis)
+- GitHub Actions CI (type-check on every push)
+
+## Local Development
 
 ### Prerequisites
 
-- Node.js 18.0 or later
-- npm or yarn package manager
-- OpenAI API key (for AI features)
+- Node.js 20+
+- Docker (for PostgreSQL + Redis)
 
-### Installation
+### Setup
 
-1. **Clone the repository**
+1. Clone the repo
    ```bash
-   git clone https://github.com/yourusername/polish.git
+   git clone https://github.com/UNTs-Best/polish.git
    cd polish
    ```
 
-2. **Install dependencies using docker**
+2. Start local infrastructure
    ```bash
-   docker compose
+   docker compose up -d
    ```
 
-3. **Set up environment variables**
+3. Copy and fill in environment variables
    ```bash
-   cp .env.example .env.local
-   ```
-   
-   Add your OpenAI API key to `.env.local`:
-   ```
-   OPENAI_API_KEY=your_api_key_here
+   cp .env.example .env
    ```
 
-4. **Run the development server**
+   Required values:
+   ```
+   DATABASE_URL=postgresql://polish:polish_secret@localhost:5432/polish_db
+   REDIS_URL=redis://localhost:6379
+   JWT_SECRET=<random 64-char string>
+   JWT_REFRESH_SECRET=<random 64-char string>
+   GOOGLE_AI_API_KEY=<your Gemini API key>
+   PORT=3001
+   ```
+
+4. Run database migrations
    ```bash
-   docker run
+   cd server && npx prisma migrate dev
    ```
 
-5. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+5. Start the backend
+   ```bash
+   cd server && npm run dev
+   ```
 
-### Building for Production
+6. Start the frontend (in a separate terminal)
+   ```bash
+   npm run dev
+   ```
 
-```bash
-npm run build
-npm start
+7. Open [http://localhost:3000](http://localhost:3000)
+
+## Deployment
+
+Deployed on Railway with four services: frontend, backend, PostgreSQL, and Redis.
+
+### Backend environment variables
+```
+DATABASE_URL        # from Railway Postgres plugin
+REDIS_URL           # from Railway Redis plugin
+JWT_SECRET
+JWT_REFRESH_SECRET
+GOOGLE_AI_API_KEY
+NODE_ENV=production
+CLIENT_URL          # frontend Railway URL
 ```
 
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes
-4. Run tests: `npm test`
-5. Commit your changes: `git commit -m 'Add amazing feature'`
-6. Push to the branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
-
-## Testing
-
-```bash
-# Run unit tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run end-to-end tests
-npm run test:e2e
-
-# Run linting
-npm run lint
+### Frontend environment variables
 ```
+NEXT_PUBLIC_API_URL  # backend Railway URL
+NODE_ENV=production
+```
+
+## Branch Strategy
+
+- `feature/*` → `dev` (staging)
+- `dev` → `main` (production)
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+MIT
