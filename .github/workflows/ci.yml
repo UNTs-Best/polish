@@ -1,15 +1,108 @@
-# .github/workflows/ci.yml
-name: CI
+name: CI/CD
 
 on:
+  push:
+    branches: [main, dev]
   pull_request:
-    branches:
-      - main
+    branches: [main, dev]
 
 jobs:
-  build-and-test:
+  # ── Build & type-check (runs on every push + PR) ───────────────────────────
+  build:
+    name: Build & Type Check
     runs-on: ubuntu-latest
 
     steps:
-      - name: All checks passed
-        run: echo "OK"
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Type check frontend
+        run: npx tsc --noEmit
+
+      - name: Install backend deps
+        run: cd server && npm ci
+
+      - name: Generate Prisma client
+        run: cd server && npx prisma generate
+
+      - name: Type check backend
+        run: cd server && npx tsc --noEmit
+
+  # ── Deploy to Staging (dev branch only) ───────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install & build frontend
+        run: npm ci && npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+
+      - name: Deploy API to staging VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_VPS_HOST }}
+          username: polish
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd ~/polish
+            git pull origin dev
+            cd server
+            npm ci --omit=dev
+            npm run build
+            DATABASE_URL=${{ secrets.DATABASE_URL }} npx prisma migrate deploy
+            pm2 reload polish-api-staging || pm2 start dist/app.js --name polish-api-staging
+
+  # ── Deploy to Production (main branch only) ────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install & build frontend
+        run: npm ci && npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+
+      - name: Deploy API to production VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_VPS_HOST }}
+          username: polish
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd ~/polish
+            git pull origin main
+            cd server
+            npm ci --omit=dev
+            npm run build
+            DATABASE_URL=${{ secrets.DATABASE_URL }} npx prisma migrate deploy
+            pm2 reload polish-api || pm2 start dist/app.js --name polish-api
