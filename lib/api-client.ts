@@ -1,6 +1,6 @@
 import { getAccessToken, getRefreshToken, setTokens, clearUserData } from "./user-storage"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken()

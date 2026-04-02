@@ -18,7 +18,16 @@ const app = express()
 
 // Security
 app.use(helmet())
-app.use(cors({ origin: env.CLIENT_URL, credentials: true }))
+const allowedOrigins = [env.CLIENT_URL, 'http://localhost:3000', 'http://127.0.0.1:3000']
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+      cb(new Error(`CORS: origin ${origin} not allowed`))
+    },
+    credentials: true,
+  })
+)
 
 // Parsing + compression
 app.use(express.json({ limit: '10mb' }))
