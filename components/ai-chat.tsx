@@ -3,7 +3,10 @@
 import type React from "react"
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
-import { Send, AlertCircle, Check, X, Undo, Mic, Paperclip, Plug, MessageSquare } from "lucide-react"
+import { Send, Check, X, Undo, Sparkles, MessageSquare } from "lucide-react"
+import { getAccessToken } from "@/lib/user-storage"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 interface Message {
   role: "user" | "assistant" | "error"
@@ -38,31 +41,27 @@ interface AIChatProps {
   onSuggestionApply?: (changes: SuggestedChanges) => void
   onUndo?: () => void
   onClearSelection?: () => void
-  simulateError?: boolean
   documentContent?: DocumentContent
-  apiKey?: string
-  onConnectClick?: () => void
+  documentId?: string | null
 }
 
 const QUICK_ACTIONS = [
-  { label: "Optimize for ATS", prompt: "Optimize the entire resume for ATS (applicant tracking systems). Use strong keywords and standard section headers." },
-  { label: "Proofread", prompt: "Proofread the entire resume. Fix any grammar, spelling, or punctuation issues." },
+  { label: "Optimize for ATS", prompt: "Optimize the entire resume for ATS. Use strong action verbs and relevant keywords." },
+  { label: "Proofread", prompt: "Proofread the resume and fix any grammar, spelling, or punctuation issues." },
   { label: "Make concise", prompt: "Make all bullet points more concise while preserving impact and metrics." },
   { label: "Quantify achievements", prompt: "Add quantifiable metrics and numbers to bullet points that lack them." },
-  { label: "Improve formatting", prompt: "Review the resume formatting and suggest improvements for readability." },
+  { label: "Score resume", prompt: "__score__" },
+  { label: "Summarize", prompt: "__summary__" },
 ]
 
 export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) => void }, AIChatProps>(function AIChat(
-  { selectedText, onSuggestionApply, onUndo, onClearSelection, simulateError, documentContent, apiKey, onConnectClick },
+  { selectedText, onSuggestionApply, onUndo, onClearSelection, documentContent, documentId },
   ref,
 ) {
-  const isConnected = !!apiKey
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: isConnected
-        ? "What would you like me to improve? Select text or use a quick action below."
-        : "Connect your Claude API key to start editing with AI.",
+      content: "What would you like me to improve? Select text or use a quick action below.",
       timestamp: new Date(),
     },
   ])
@@ -74,14 +73,9 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
   const [canUndo, setCanUndo] = useState(false)
   const [currentSelection, setCurrentSelection] = useState<string>("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const liveRegionRef = useRef<HTMLDivElement>(null)
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
 
   useEffect(() => {
-    scrollToBottom()
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
   useEffect(() => {
@@ -90,96 +84,124 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
     }
   }, [selectedText])
 
-  useEffect(() => {
-    setMessages((prev) => {
-      if (prev.length === 1 && prev[0].role === "assistant") {
-        return [
-          {
-            role: "assistant",
-            content: isConnected
-              ? "What would you like me to improve? Select text or use a quick action below."
-              : "Connect your Claude API key to start editing with AI.",
-            timestamp: new Date(),
-          },
-        ]
-      }
-      return prev
-    })
-  }, [isConnected])
-
   const handleSendMessage = async (messageText?: string, contextText?: string) => {
     const messageToSend = messageText || input
-    if (!messageToSend.trim() || isLoading || !isConnected) return
+    if (!messageToSend.trim() || isLoading) return
 
-    const displayMessage =
-      contextText || currentSelection
-        ? `${messageToSend}\n\nSelected text: "${(contextText || currentSelection).substring(0, 200)}${(contextText || currentSelection).length > 200 ? "..." : ""}"`
-        : messageToSend
-
-    const userMessage: Message = {
-      role: "user",
-      content: displayMessage,
-      timestamp: new Date(),
+    // Special quick actions that hit dedicated endpoints
+    if (messageToSend === "__score__") {
+      await handleScoreAction()
+      return
+    }
+    if (messageToSend === "__summary__") {
+      await handleSummaryAction()
+      return
     }
 
-    setMessages((prev) => [...prev, userMessage])
+    const displayContent =
+      contextText || currentSelection
+        ? `${messageToSend}\n\nSelected: "${(contextText || currentSelection).substring(0, 150)}${(contextText || currentSelection).length > 150 ? "…" : ""}"`
+        : messageToSend
+
+    setMessages((prev) => [...prev, { role: "user", content: displayContent, timestamp: new Date() }])
     setInput("")
     setIsLoading(true)
     setShowTypingDots(true)
 
     try {
-      const response = await fetch("/api/chat", {
+      const token = getAccessToken()
+      if (!token || !documentId) throw new Error("Not authenticated")
+
+      const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-anthropic-key": apiKey!,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           message: messageToSend,
-          selectedText: contextText || currentSelection,
-          documentContent: documentContent,
+          selectedText: contextText || currentSelection || undefined,
         }),
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || "Failed to get AI response")
-      }
-
-      const data = await response.json()
+      if (!res.ok) throw new Error("AI request failed")
+      const data = await res.json()
 
       setShowTypingDots(false)
-
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: data.message,
-        timestamp: new Date(),
-        suggestedChanges: data.suggestedChanges,
-      }
-
-      setMessages((prev) => [...prev, assistantMessage])
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.message,
+          timestamp: new Date(),
+          suggestedChanges: data.suggestedChanges,
+        },
+      ])
 
       setCurrentSelection("")
-      if (onClearSelection) {
-        onClearSelection()
-      }
-
-      if (liveRegionRef.current) {
-        liveRegionRef.current.textContent = `AI Assistant: ${data.message}`
-      }
+      onClearSelection?.()
     } catch (error) {
-      console.error("Error sending message:", error)
       setShowTypingDots(false)
-      const errorMessage: Message = {
-        role: "error",
-        content: error instanceof Error ? error.message : "Sorry, I encountered an error. Please try again.",
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, errorMessage])
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "error",
+          content: error instanceof Error ? error.message : "Something went wrong. Please try again.",
+          timestamp: new Date(),
+        },
+      ])
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
-      if (liveRegionRef.current) {
-        liveRegionRef.current.textContent = "Error: Failed to get AI response. Please try again."
-      }
+  const handleScoreAction = async () => {
+    setMessages((prev) => [...prev, { role: "user", content: "Score my resume", timestamp: new Date() }])
+    setIsLoading(true)
+    setShowTypingDots(true)
+    try {
+      const token = getAccessToken()
+      if (!token || !documentId) throw new Error("Not authenticated")
+
+      const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/quality`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error("Quality check failed")
+      const data = await res.json()
+
+      const content = `**Score: ${data.score}/10**\n\n**Strengths:**\n${data.strengths.map((s: string) => `• ${s}`).join("\n")}\n\n**Issues:**\n${data.issues.map((i: string) => `• ${i}`).join("\n")}`
+      setShowTypingDots(false)
+      setMessages((prev) => [...prev, { role: "assistant", content, timestamp: new Date() }])
+    } catch (error) {
+      setShowTypingDots(false)
+      setMessages((prev) => [
+        ...prev,
+        { role: "error", content: "Failed to score resume.", timestamp: new Date() },
+      ])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSummaryAction = async () => {
+    setMessages((prev) => [...prev, { role: "user", content: "Summarize my resume", timestamp: new Date() }])
+    setIsLoading(true)
+    setShowTypingDots(true)
+    try {
+      const token = getAccessToken()
+      if (!token || !documentId) throw new Error("Not authenticated")
+
+      const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/summary`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error("Summary failed")
+      const data = await res.json()
+
+      setShowTypingDots(false)
+      setMessages((prev) => [...prev, { role: "assistant", content: data.summary, timestamp: new Date() }])
+    } catch (error) {
+      setShowTypingDots(false)
+      setMessages((prev) => [
+        ...prev,
+        { role: "error", content: "Failed to summarize resume.", timestamp: new Date() },
+      ])
     } finally {
       setIsLoading(false)
     }
@@ -192,47 +214,20 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
     }
   }
 
-  const handleRetry = () => {
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")
-    if (lastUserMessage) {
-      handleSendMessage(lastUserMessage.content)
-    }
-  }
-
   const handleAcceptChanges = (changes: SuggestedChanges, messageIndex: number) => {
     setAcceptingChange(messageIndex)
-
     setTimeout(() => {
-      if (onSuggestionApply) {
-        onSuggestionApply(changes)
-      }
-
+      onSuggestionApply?.(changes)
       setAcceptedChanges((prev) => new Set(prev).add(messageIndex))
       setAcceptingChange(null)
       setCanUndo(true)
-
-      if (liveRegionRef.current) {
-        liveRegionRef.current.textContent = "Changes applied successfully"
-      }
     }, 600)
   }
 
-  const handleRejectChanges = () => {
-    if (liveRegionRef.current) {
-      liveRegionRef.current.textContent = "Changes rejected"
-    }
-  }
-
   const handleUndo = () => {
-    if (onUndo) {
-      onUndo()
-    }
+    onUndo?.()
     setCanUndo(false)
     setAcceptedChanges(new Set())
-
-    if (liveRegionRef.current) {
-      liveRegionRef.current.textContent = "Changes undone successfully"
-    }
   }
 
   useImperativeHandle(ref, () => ({
@@ -253,11 +248,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         `,
         backgroundSize: "20px 20px",
       }}
-      role="complementary"
-      aria-label="AI chat assistant"
     >
-      <div ref={liveRegionRef} className="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-
       {/* Header */}
       <div className="border-b border-slate-200/60 p-4 bg-white/80 backdrop-blur-sm">
         <div className="flex items-center justify-between">
@@ -266,13 +257,10 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
               <MessageSquare className="w-4 h-4 text-slate-600" />
             </div>
             <div>
-              <h3 className="font-semibold text-sm">
-                <span className="text-orange-600">Claude</span>
-                <span className="text-slate-900"> Assistant</span>
-              </h3>
+              <h3 className="font-semibold text-sm text-slate-900">AI Assistant</h3>
               <div className="flex items-center gap-1.5">
-                <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-orange-500" : "bg-gray-400"}`} />
-                <p className="text-xs text-slate-500">{isConnected ? "MCP Server Active" : "Not connected"}</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <p className="text-xs text-slate-500">Powered by Gemini</p>
               </div>
             </div>
           </div>
@@ -282,7 +270,6 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
               variant="ghost"
               onClick={handleUndo}
               className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-              aria-label="Undo last changes"
             >
               <Undo className="w-3 h-3 mr-1" />
               Undo
@@ -291,8 +278,8 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         </div>
       </div>
 
-      {/* Quick Actions (Prism-inspired) */}
-      {isConnected && messages.length <= 2 && !isLoading && (
+      {/* Quick Actions */}
+      {messages.length <= 1 && !isLoading && (
         <div className="px-4 pt-3 pb-1">
           <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">Quick actions</p>
           <div className="flex flex-wrap gap-1.5">
@@ -300,7 +287,8 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
               <button
                 key={action.label}
                 onClick={() => handleSendMessage(action.prompt)}
-                className="text-xs px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 transition-colors shadow-sm"
+                disabled={!documentId}
+                className="text-xs px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {action.label}
               </button>
@@ -309,7 +297,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         </div>
       )}
 
-      {/* Chat Messages */}
+      {/* Messages */}
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {messages.map((message, index) => (
           <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -319,21 +307,18 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                   ? "bg-slate-100 text-slate-900"
                   : message.role === "error"
                     ? "bg-red-50 border border-red-200 text-red-900"
-                    : "bg-white border border-slate-200/80 shadow-sm border-l-2 border-l-orange-400"
+                    : "bg-white border border-slate-200/80 shadow-sm"
               }`}
             >
-              {message.role === "error" && (
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                  <span className="font-semibold text-red-900">Error</span>
-                </div>
-              )}
               <div className="whitespace-pre-wrap">{message.content}</div>
 
               {message.suggestedChanges && (
                 <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200/60">
                   <div className="space-y-2">
-                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Suggested changes</div>
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      Suggested changes
+                    </div>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {message.suggestedChanges.changes.map((change, idx) => (
                         <div key={idx} className="text-xs space-y-1 pb-2 border-b border-slate-200/60 last:border-0">
@@ -350,10 +335,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                           size="sm"
                           onClick={() => handleAcceptChanges(message.suggestedChanges!, index)}
                           disabled={acceptingChange === index}
-                          className={`flex-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-all duration-300 ${
-                            acceptingChange === index ? "scale-95 opacity-80" : ""
-                          }`}
-                          aria-label="Accept suggested changes"
+                          className="flex-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg"
                         >
                           {acceptingChange === index ? (
                             <>
@@ -370,17 +352,15 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={handleRejectChanges}
                           disabled={acceptingChange === index}
                           className="flex-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
-                          aria-label="Reject suggested changes"
                         >
                           <X className="w-3 h-3 mr-1" />
                           Dismiss
                         </Button>
                       </div>
                     ) : (
-                      <div className="mt-3 pt-2 border-t border-slate-200/60 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="mt-3 pt-2 border-t border-slate-200/60">
                         <div className="flex items-center justify-center gap-2 text-green-700 bg-green-50 py-2 rounded-lg">
                           <Check className="w-4 h-4" />
                           <span className="text-sm font-medium">Applied</span>
@@ -390,35 +370,17 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                   </div>
                 </div>
               )}
-
-              {message.role === "error" && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="mt-2 w-full text-red-700 hover:bg-red-50"
-                  onClick={handleRetry}
-                  aria-label="Retry sending message"
-                >
-                  Retry
-                </Button>
-              )}
             </div>
           </div>
         ))}
 
         {showTypingDots && (
-          <div className="flex justify-start" role="status" aria-label="AI is typing">
+          <div className="flex justify-start">
             <div className="bg-white border border-slate-200/80 rounded-2xl px-4 py-2.5 text-sm shadow-sm">
               <div className="flex items-center space-x-1">
-                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
-                <div
-                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.15s" }}
-                ></div>
-                <div
-                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.3s" }}
-                ></div>
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" />
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
               </div>
             </div>
           </div>
@@ -427,49 +389,26 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
+      {/* Input */}
       <div className="p-4 bg-white/80 backdrop-blur-sm border-t border-slate-200/60">
-        {!isConnected ? (
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-2">
+          <input
+            type="text"
+            placeholder={documentId ? "Ask AI to improve your resume…" : "Open a document to use AI"}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={isLoading || !documentId}
+            className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
+          />
           <button
-            onClick={onConnectClick}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-50 border border-slate-200/80 rounded-xl text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+            onClick={() => handleSendMessage()}
+            disabled={isLoading || !input.trim() || !documentId}
+            className="p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-40 transition-colors"
           >
-            <Plug className="w-4 h-4" />
-            Connect Claude API Key to start
+            <Send className="w-4 h-4" />
           </button>
-        ) : (
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-2">
-            <input
-              type="text"
-              placeholder="What would you like me to improve?"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={isLoading}
-              className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-              aria-label="Chat input field"
-            />
-            <div className="flex items-center gap-1">
-              <button className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" aria-label="Voice input">
-                <Mic className="w-4 h-4" />
-              </button>
-              <button
-                className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
-                aria-label="Attach file"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={isLoading || !input.trim()}
-                className="p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-50 transition-colors"
-                aria-label="Send message"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   )

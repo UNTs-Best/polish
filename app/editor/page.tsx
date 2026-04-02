@@ -1,7 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { Undo, Download, Check, ArrowLeft, HelpCircle, Clock, Upload, User, LogOut, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,14 +19,15 @@ import { ExportDialog } from "@/components/export-dialog"
 import { FileUpload } from "@/components/file-upload"
 import { EditorWelcomeModal } from "@/components/editor-welcome-modal"
 import { InlinePrompt } from "@/components/inline-prompt"
-import { ClaudeConnect, ClaudeConnectionStatus } from "@/components/claude-connect"
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
-import { getUserItem, setUserItem, removeUserItem, clearUserData } from "@/lib/user-storage"
+import { getUserItem, setUserItem, removeUserItem, clearUserData, getAccessToken } from "@/lib/user-storage"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 interface SuggestedChanges {
   type: string
@@ -115,8 +117,10 @@ function loadFromLocalStorage(
   }
 }
 
-export default function EditorPage() {
+function EditorPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const docId = searchParams.get("id")
   const [user, setUser] = useState<{ email: string; name: string } | null>(null)
   const [selectedText, setSelectedText] = useState("")
   const [simulateExportError] = useState(false)
@@ -129,15 +133,9 @@ export default function EditorPage() {
   const [, setLastSavedAt] = useState<Date | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [documentId, setDocumentId] = useState<string | null>(null)
-  const [isCosmosDbEnabled, setIsCosmosDbEnabled] = useState(false)
-  const [, setCosmosDbError] = useState<string | null>(null)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [userRole, setUserRole] = useState<string | undefined>()
   const { toast } = useToast()
-
-  // Claude connection state
-  const [claudeApiKey, setClaudeApiKey] = useState<string | null>(null)
-  const [showClaudeConnect, setShowClaudeConnect] = useState(false)
 
   // Source format state (from uploaded file)
   const [sourceFormat, setSourceFormat] = useState<FormatLabel | null>(null)
@@ -208,22 +206,21 @@ export default function EditorPage() {
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 })
   const aiChatRef = useRef<{ sendMessage: (prompt: string, text: string) => void } | null>(null)
 
-  // Load user and Claude API key from localStorage on mount
+  // Auth guard + load user
   useEffect(() => {
     const storedUser = localStorage.getItem("polish_user")
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser))
-      } catch {
-        setUser(null)
-      }
+    const token = getAccessToken()
+    if (!storedUser || !token) {
+      router.replace("/signin")
+      return
+    }
+    try {
+      setUser(JSON.parse(storedUser))
+    } catch {
+      router.replace("/signin")
     }
 
-    const savedKey = getUserItem("polish_claude_api_key")
-    if (savedKey) {
-      setClaudeApiKey(savedKey)
-    }
-  }, [])
+  }, [router])
 
   const [isSigningOut, setIsSigningOut] = useState(false)
 
@@ -243,40 +240,44 @@ export default function EditorPage() {
   }
 
   useEffect(() => {
-    const checkCosmosDb = async () => {
+    if (!docId) {
+      router.replace("/dashboard")
+      return
+    }
+
+    const token = getAccessToken()
+    if (!token) return
+
+    setDocumentId(docId)
+
+    const loadDocument = async () => {
       try {
-        const response = await fetch("/api/documents", {
-          method: "GET",
-          headers: { "x-user-id": "anonymous" },
+        const res = await fetch(`${API_URL}/api/docs/${docId}`, {
+          headers: { Authorization: `Bearer ${token}` },
         })
-
-        if (response.ok) {
-          setIsCosmosDbEnabled(true)
-          console.log("[v0] Cosmos DB is available")
-
-          // Try to load the most recent document
-          const data = await response.json()
-          if (data.documents && data.documents.length > 0) {
-            const latestDoc = data.documents[0]
-            setDocumentId(latestDoc.id)
-            setDocumentContent(latestDoc.content)
-            console.log("[v0] Loaded document from Cosmos DB:", latestDoc.id)
-          }
-        } else {
-          throw new Error("Cosmos DB not configured")
+        if (!res.ok) {
+          router.replace("/dashboard")
+          return
         }
-      } catch (error) {
-        console.log("[v0] Cosmos DB not available, using localStorage fallback")
-        setIsCosmosDbEnabled(false)
-        setCosmosDbError(error instanceof Error ? error.message : "Unknown error")
+        const { document: doc } = await res.json()
 
-        // Fallback to localStorage
+        if (doc.content) {
+          try {
+            const parsed = JSON.parse(doc.content)
+            if (parsed && typeof parsed === "object" && parsed.name) {
+              setDocumentContent(parsed)
+            }
+          } catch {
+            // plain text content — leave default
+          }
+        }
+      } catch {
         loadFromLocalStorage(setDocumentContent, setDocumentVersions)
       }
     }
 
-    checkCosmosDb()
-  }, [])
+    loadDocument()
+  }, [docId, router])
 
   useEffect(() => {
     const loadDocumentContent = () => {
@@ -330,55 +331,30 @@ export default function EditorPage() {
   }, [])
 
   const handleAutosave = async () => {
+    if (!documentId) return
+    const token = getAccessToken()
+    if (!token) return
+
     setIsSaving(true)
     try {
-      setUserItem("polishEditor_document", JSON.stringify(documentContent))
-      setUserItem("polishEditor_versions", JSON.stringify(documentVersions))
-      console.log("[v0] Saved to localStorage")
-
-      if (isCosmosDbEnabled) {
-        // Save to Cosmos DB
-        const response = await fetch("/api/documents", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": "anonymous",
-          },
-          body: JSON.stringify({
-            id: documentId,
-            title: documentContent.name,
-            content: documentContent,
-          }),
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          if (!documentId) {
-            setDocumentId(data.document.id)
-          }
-          setLastSavedAt(new Date())
-          console.log("[v0] Document saved to Cosmos DB successfully")
-        } else {
-          const error = await response.json()
-          console.error("[v0] Cosmos DB save failed:", error)
-          toast({
-            title: "Save Warning",
-            description: "Saved locally but cloud sync failed. Your changes are safe.",
-            variant: "default",
-          })
-        }
-      } else {
-        // Just localStorage
-        setLastSavedAt(new Date())
-        console.log("[v0] Document saved to localStorage (Cosmos DB not available)")
-      }
-    } catch (error) {
-      console.error("[v0] Autosave failed:", error)
-      toast({
-        title: "Save Error",
-        description: "Failed to save. Your changes are stored locally.",
-        variant: "destructive",
+      const res = await fetch(`${API_URL}/api/docs/${documentId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: documentContent.name || "Untitled Resume",
+          content: JSON.stringify(documentContent),
+        }),
       })
+
+      if (res.ok) {
+        setLastSavedAt(new Date())
+      } else {
+        toast({ title: "Save Warning", description: "Cloud sync failed. Changes saved locally.", variant: "default" })
+        setUserItem("polishEditor_document", JSON.stringify(documentContent))
+      }
+    } catch {
+      toast({ title: "Save Error", description: "Failed to save. Changes stored locally.", variant: "destructive" })
+      setUserItem("polishEditor_document", JSON.stringify(documentContent))
     } finally {
       setIsSaving(false)
     }
@@ -406,26 +382,23 @@ export default function EditorPage() {
     setDocumentVersions((prev) => [newVersion, ...prev])
     console.log("[v0] Created version snapshot:", newVersion.id)
 
-    // Save version to Cosmos DB if available
-    if (isCosmosDbEnabled && documentId) {
-      try {
-        const response = await fetch(`/api/documents/${documentId}/versions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": "anonymous",
-          },
-          body: JSON.stringify({
-            content: documentContent,
-            changeDescription: description,
-          }),
-        })
-
-        if (response.ok) {
-          console.log("[v0] Version saved to Cosmos DB")
+    // Save version to API if document is loaded
+    if (documentId) {
+      const token = getAccessToken()
+      if (token) {
+        try {
+          await fetch(`${API_URL}/api/versions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              documentId,
+              content: JSON.stringify(documentContent),
+              changeDescription: description,
+            }),
+          })
+        } catch {
+          // version save is best-effort, don't block the user
         }
-      } catch (error) {
-        console.error("[v0] Failed to save version to Cosmos DB:", error)
       }
     }
   }
@@ -596,23 +569,6 @@ export default function EditorPage() {
       localStorage.removeItem("polishEditor_versions")
       console.log("[v0] Cleared version history from localStorage")
 
-      // Clear Cosmos DB versions if enabled
-      if (isCosmosDbEnabled && documentId) {
-        try {
-          const response = await fetch(`/api/documents/${documentId}/versions`, {
-            method: "DELETE",
-            headers: {
-              "x-user-id": "anonymous",
-            },
-          })
-
-          if (response.ok) {
-            console.log("[v0] Cleared version history from Cosmos DB")
-          }
-        } catch (error) {
-          console.error("[v0] Failed to clear Cosmos DB versions:", error)
-        }
-      }
 
       // Set to empty array - no versions at all
       setDocumentVersions([])
@@ -722,25 +678,6 @@ export default function EditorPage() {
     setSelectedText("")
   }
 
-  // Claude connection handlers
-  const handleClaudeConnect = (key: string) => {
-    setClaudeApiKey(key)
-    setUserItem("polish_claude_api_key", key)
-    toast({
-      title: "Connected to Claude",
-      description: "AI-powered editing is now active.",
-    })
-  }
-
-  const handleClaudeDisconnect = () => {
-    setClaudeApiKey(null)
-    removeUserItem("polish_claude_api_key")
-    toast({
-      title: "Disconnected",
-      description: "Claude API key removed.",
-    })
-  }
-
   return (
     <div className="h-screen flex flex-col bg-background">
       {showWelcomeModal && <EditorWelcomeModal onClose={handleCloseWelcome} userRole={userRole} />}
@@ -765,10 +702,6 @@ export default function EditorPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <ClaudeConnectionStatus
-              isConnected={!!claudeApiKey}
-              onClick={() => setShowClaudeConnect(true)}
-            />
             <Button
               variant="ghost"
               size="sm"
@@ -812,12 +745,6 @@ export default function EditorPage() {
                     {user.email}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setShowClaudeConnect(true)}
-                    className="cursor-pointer"
-                  >
-                    Account Settings
-                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={handleSignOut}
@@ -889,8 +816,7 @@ export default function EditorPage() {
           onUndo={handleUndoChanges}
           onClearSelection={handleClearSelection}
           documentContent={documentContent}
-          apiKey={claudeApiKey || undefined}
-          onConnectClick={() => setShowClaudeConnect(true)}
+          documentId={documentId}
         />
       </div>
 
@@ -904,14 +830,14 @@ export default function EditorPage() {
         onReset={handleResetVersionHistory}
       />
 
-      <ClaudeConnect
-        isOpen={showClaudeConnect}
-        onClose={() => setShowClaudeConnect(false)}
-        onConnect={handleClaudeConnect}
-        onDisconnect={handleClaudeDisconnect}
-        isConnected={!!claudeApiKey}
-      />
     </div>
   )
 }
 
+export default function EditorPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-500">Loading...</div>}>
+      <EditorPageInner />
+    </Suspense>
+  )
+}

@@ -5,6 +5,7 @@ import {
   applySuggestions,
   summarizeDocument,
   scoreDocumentQuality,
+  chatWithDocument,
   logInteraction,
   type Suggestion,
 } from '../services/llm.service.js'
@@ -55,6 +56,21 @@ export async function quality(req: AuthRequest, res: Response, next: NextFunctio
     const doc = await getDocumentById(req.params.documentId!, req.user!.id)
     const result = await scoreDocumentQuality(doc.content, doc.documentType ?? 'resume')
     await logInteraction(req.user!.id, doc.id, doc.content, JSON.stringify(result), 0, 'quality')
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function chat(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { message, selectedText } = z
+      .object({ message: z.string().min(1), selectedText: z.string().optional() })
+      .parse(req.body)
+
+    const doc = await getDocumentById(req.params.documentId!, req.user!.id)
+    const result = await chatWithDocument(message, doc.content, selectedText)
+    await logInteraction(req.user!.id, doc.id, message, result.message, 0, 'chat')
     res.json(result)
   } catch (err) {
     next(err)
