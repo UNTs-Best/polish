@@ -12,10 +12,16 @@ import {
 import { getDocumentById, updateDocument } from '../services/document.service.js'
 import type { AuthRequest } from '../middleware/auth.js'
 
+function getUserApiKey(req: AuthRequest): string | undefined {
+  const key = req.headers['x-gemini-api-key']
+  return typeof key === 'string' && key.length > 0 ? key : undefined
+}
+
 export async function suggestions(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const apiKey = getUserApiKey(req)
     const doc = await getDocumentById(req.params.documentId!, req.user!.id)
-    const result = await generateSuggestions(doc.content, doc.documentType ?? 'resume')
+    const result = await generateSuggestions(doc.content, doc.documentType ?? 'resume', apiKey)
     await logInteraction(req.user!.id, doc.id, doc.content, JSON.stringify(result), 0, 'suggestion')
     res.json({ suggestions: result })
   } catch (err) {
@@ -42,8 +48,9 @@ export async function applyAll(req: AuthRequest, res: Response, next: NextFuncti
 
 export async function summary(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const apiKey = getUserApiKey(req)
     const doc = await getDocumentById(req.params.documentId!, req.user!.id)
-    const text = await summarizeDocument(doc.content)
+    const text = await summarizeDocument(doc.content, apiKey)
     await logInteraction(req.user!.id, doc.id, doc.content, text, 0, 'summary')
     res.json({ summary: text })
   } catch (err) {
@@ -53,8 +60,9 @@ export async function summary(req: AuthRequest, res: Response, next: NextFunctio
 
 export async function quality(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const apiKey = getUserApiKey(req)
     const doc = await getDocumentById(req.params.documentId!, req.user!.id)
-    const result = await scoreDocumentQuality(doc.content, doc.documentType ?? 'resume')
+    const result = await scoreDocumentQuality(doc.content, doc.documentType ?? 'resume', apiKey)
     await logInteraction(req.user!.id, doc.id, doc.content, JSON.stringify(result), 0, 'quality')
     res.json(result)
   } catch (err) {
@@ -64,12 +72,13 @@ export async function quality(req: AuthRequest, res: Response, next: NextFunctio
 
 export async function chat(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const apiKey = getUserApiKey(req)
     const { message, selectedText } = z
       .object({ message: z.string().min(1), selectedText: z.string().optional() })
       .parse(req.body)
 
     const doc = await getDocumentById(req.params.documentId!, req.user!.id)
-    const result = await chatWithDocument(message, doc.content, selectedText)
+    const result = await chatWithDocument(message, doc.content, selectedText, apiKey)
     await logInteraction(req.user!.id, doc.id, message, result.message, 0, 'chat')
     res.json(result)
   } catch (err) {

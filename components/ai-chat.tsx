@@ -43,6 +43,7 @@ interface AIChatProps {
   onClearSelection?: () => void
   documentContent?: DocumentContent
   documentId?: string | null
+  geminiApiKey?: string
 }
 
 const QUICK_ACTIONS = [
@@ -55,7 +56,7 @@ const QUICK_ACTIONS = [
 ]
 
 export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) => void }, AIChatProps>(function AIChat(
-  { selectedText, onSuggestionApply, onUndo, onClearSelection, documentContent, documentId },
+  { selectedText, onSuggestionApply, onUndo, onClearSelection, documentContent, documentId, geminiApiKey },
   ref,
 ) {
   const [messages, setMessages] = useState<Message[]>([
@@ -114,7 +115,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
 
       const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(geminiApiKey ? { 'x-gemini-api-key': geminiApiKey } : {}) },
         body: JSON.stringify({
           message: messageToSend,
           selectedText: contextText || currentSelection || undefined,
@@ -161,7 +162,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       if (!token || !documentId) throw new Error("Not authenticated")
 
       const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/quality`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...(geminiApiKey ? { 'x-gemini-api-key': geminiApiKey } : {}) },
       })
       if (!res.ok) throw new Error("Quality check failed")
       const data = await res.json()
@@ -189,7 +190,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       if (!token || !documentId) throw new Error("Not authenticated")
 
       const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/summary`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...(geminiApiKey ? { 'x-gemini-api-key': geminiApiKey } : {}) },
       })
       if (!res.ok) throw new Error("Summary failed")
       const data = await res.json()
