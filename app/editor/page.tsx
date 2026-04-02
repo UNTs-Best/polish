@@ -22,7 +22,7 @@ import { InlinePrompt } from "@/components/inline-prompt"
 import { ResumeRenderer } from "@/components/resume-renderer"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type FormatLabel, parseResumeText } from "@/lib/document-parser"
+import { parseResumeText } from "@/lib/document-parser"
 import { useAutosave } from "@/hooks/use-autosave"
 import { useToast } from "@/hooks/use-toast"
 import { getUserItem, setUserItem, removeUserItem, clearUserData, getAccessToken } from "@/lib/user-storage"
@@ -138,7 +138,7 @@ function EditorPageInner() {
   const { toast } = useToast()
 
   // Source format state (from uploaded file)
-  const [sourceFormat, setSourceFormat] = useState<FormatLabel | null>(null)
+  const [sourceFormat, setSourceFormat] = useState<string | null>(null)
 
   const [documentContent, setDocumentContent] = useState<DocumentContent>({
     name: "Jake Ryan",
@@ -530,7 +530,7 @@ function EditorPageInner() {
     return pendingChanges.some((change) => change.updated === text || change.original === text)
   }
 
-  const handleFileUpload = (file: File, content: string, format: FormatLabel) => {
+  const handleFileUpload = (file: File, content: string, format: string) => {
     setUploadedFileName(file.name)
     setSourceFormat(format)
     setShowUploadDialog(false)
