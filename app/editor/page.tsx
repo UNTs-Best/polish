@@ -711,7 +711,7 @@ function EditorPageInner() {
               Upload
             </Button>
             <ExportDialog documentContent={documentContent} simulateError={simulateExportError} sourceFormat={sourceFormat || undefined}>
-              <Button size="sm" className="bg-foreground text-background hover:bg-foreground/90">
+              <Button size="sm" data-export-trigger className="bg-foreground text-background hover:bg-foreground/90">
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>

@@ -122,7 +122,8 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
         }),
       })
 
-      if (!res.ok) throw new Error("AI request failed")
+      if (res.status === 401) throw new Error("Session expired. Please sign in again.")
+      if (!res.ok) throw new Error(`AI request failed (${res.status}). Please try again.`)
       const data = await res.json()
 
       setShowTypingDots(false)
@@ -140,11 +141,17 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       onClearSelection?.()
     } catch (error) {
       setShowTypingDots(false)
+      const errorMsg =
+        error instanceof TypeError && error.message === "Failed to fetch"
+          ? "Unable to reach the server. Check your connection and try again."
+          : error instanceof Error
+            ? error.message
+            : "Something went wrong. Please try again."
       setMessages((prev) => [
         ...prev,
         {
           role: "error",
-          content: error instanceof Error ? error.message : "Something went wrong. Please try again.",
+          content: errorMsg,
           timestamp: new Date(),
         },
       ])
@@ -164,7 +171,8 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/quality`, {
         headers: { Authorization: `Bearer ${token}`, ...(geminiApiKey ? { 'x-gemini-api-key': geminiApiKey } : {}) },
       })
-      if (!res.ok) throw new Error("Quality check failed")
+      if (res.status === 401) throw new Error("Session expired. Please sign in again.")
+      if (!res.ok) throw new Error("Quality check failed. Please try again.")
       const data = await res.json()
 
       const content = `**Score: ${data.score}/10**\n\n**Strengths:**\n${data.strengths.map((s: string) => `• ${s}`).join("\n")}\n\n**Issues:**\n${data.issues.map((i: string) => `• ${i}`).join("\n")}`
@@ -172,9 +180,15 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       setMessages((prev) => [...prev, { role: "assistant", content, timestamp: new Date() }])
     } catch (error) {
       setShowTypingDots(false)
+      const errorMsg =
+        error instanceof TypeError && error.message === "Failed to fetch"
+          ? "Unable to reach the server. Check your connection and try again."
+          : error instanceof Error
+            ? error.message
+            : "Failed to score resume."
       setMessages((prev) => [
         ...prev,
-        { role: "error", content: "Failed to score resume.", timestamp: new Date() },
+        { role: "error", content: errorMsg, timestamp: new Date() },
       ])
     } finally {
       setIsLoading(false)
@@ -192,16 +206,23 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       const res = await fetch(`${API_URL}/api/llm/documents/${documentId}/summary`, {
         headers: { Authorization: `Bearer ${token}`, ...(geminiApiKey ? { 'x-gemini-api-key': geminiApiKey } : {}) },
       })
-      if (!res.ok) throw new Error("Summary failed")
+      if (res.status === 401) throw new Error("Session expired. Please sign in again.")
+      if (!res.ok) throw new Error("Summary failed. Please try again.")
       const data = await res.json()
 
       setShowTypingDots(false)
       setMessages((prev) => [...prev, { role: "assistant", content: data.summary, timestamp: new Date() }])
     } catch (error) {
       setShowTypingDots(false)
+      const errorMsg =
+        error instanceof TypeError && error.message === "Failed to fetch"
+          ? "Unable to reach the server. Check your connection and try again."
+          : error instanceof Error
+            ? error.message
+            : "Failed to summarize resume."
       setMessages((prev) => [
         ...prev,
-        { role: "error", content: "Failed to summarize resume.", timestamp: new Date() },
+        { role: "error", content: errorMsg, timestamp: new Date() },
       ])
     } finally {
       setIsLoading(false)
@@ -354,6 +375,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
                           size="sm"
                           variant="ghost"
                           disabled={acceptingChange === index}
+                          onClick={() => setAcceptedChanges((prev) => new Set(prev).add(index))}
                           className="flex-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
                         >
                           <X className="w-3 h-3 mr-1" />
@@ -398,7 +420,7 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
             placeholder={documentId ? "Ask AI to improve your resume…" : "Open a document to use AI"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             disabled={isLoading || !documentId}
             className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
           />
