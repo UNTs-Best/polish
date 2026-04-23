@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 
 interface DocumentContent {
@@ -116,30 +116,60 @@ export function getTemplateOptions(): Array<{ value: TemplateName; label: string
   }))
 }
 
-// EditableText — internal component for inline contentEditable fields.
-// The caller (editor page) uses onUpdate to update documentContent state, which triggers autosave.
+function parseInlineMarkdown(text: string): string {
+  return text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`(.+?)`/g, "<code class=\"bg-muted px-0.5 rounded text-xs font-mono\">$1</code>")
+}
+
 interface EditableTextProps {
   value: string
   onChange: (val: string) => void
   className?: string
   multiline?: boolean
+  renderMarkdown?: boolean
 }
 
-function EditableText({ value, onChange, className, multiline }: EditableTextProps) {
+function EditableText({ value, onChange, className, multiline, renderMarkdown }: EditableTextProps) {
+  const [isEditing, setIsEditing] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
 
-  // Sync external value changes into the DOM only when the element is not focused,
-  // to avoid clobbering in-progress edits.
+  useEffect(() => {
+    if (isEditing && ref.current) {
+      ref.current.focus()
+      // Place cursor at end
+      const range = document.createRange()
+      const sel = window.getSelection()
+      range.selectNodeContents(ref.current)
+      range.collapse(false)
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+    }
+  }, [isEditing])
+
+  // Sync external value into DOM when not editing
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (document.activeElement === el) return
+    if (!el || isEditing) return
     if (el.textContent !== value) {
       el.textContent = value
     }
-  }, [value])
+  }, [value, isEditing])
+
+  if (!isEditing) {
+    return (
+      <span
+        onClick={() => setIsEditing(true)}
+        className={`cursor-text rounded px-0.5 -mx-0.5 hover:bg-slate-50 transition-colors${className ? ` ${className}` : ""}`}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown ? parseInlineMarkdown(value) : value }}
+      />
+    )
+  }
 
   const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
+    setIsEditing(false)
     onChange(e.currentTarget.textContent || "")
   }
 
@@ -157,10 +187,8 @@ function EditableText({ value, onChange, className, multiline }: EditableTextPro
       suppressContentEditableWarning={true}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      // dangerouslySetInnerHTML is used only for the initial render value.
-      // Subsequent updates are applied via the ref in useEffect above.
       dangerouslySetInnerHTML={{ __html: value }}
-      className={`outline-none focus:bg-slate-50 rounded px-0.5 -mx-0.5 transition-colors${className ? ` ${className}` : ""}`}
+      className={`outline-none bg-slate-50 rounded px-0.5 -mx-0.5${className ? ` ${className}` : ""}`}
     />
   )
 }
@@ -339,6 +367,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                         <EditableText
                           value={bullet}
                           multiline={true}
+                          renderMarkdown={true}
                           onChange={(val) => {
                             const experience = documentContent.experience.map((e, i) =>
                               i === idx
@@ -413,6 +442,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                         <EditableText
                           value={bullet}
                           multiline={true}
+                          renderMarkdown={true}
                           onChange={(val) => {
                             const projects = documentContent.projects.map((p, i) =>
                               i === idx
@@ -500,6 +530,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                           <EditableText
                             value={bullet}
                             multiline={true}
+                            renderMarkdown={true}
                             onChange={(val) => {
                               const leadership = documentContent.leadership!.map((l, i) =>
                                 i === idx
