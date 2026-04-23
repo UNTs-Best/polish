@@ -717,7 +717,7 @@ function EditorPageInner() {
               </Button>
             </ExportDialog>
             {user && (
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
