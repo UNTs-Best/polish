@@ -665,7 +665,7 @@ export default function LandingPage() {
       {/* Demo Modal */}
       {showDemoModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
             {showCursor && (
               <div
                 className={`absolute w-0.5 h-5 bg-slate-800 z-10 transition-all duration-500 shadow-lg ${

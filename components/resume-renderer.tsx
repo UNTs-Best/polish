@@ -135,28 +135,36 @@ interface EditableTextProps {
 function EditableText({ value, onChange, className, multiline, renderMarkdown }: EditableTextProps) {
   const [isEditing, setIsEditing] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
+  // Track the latest external value without triggering the edit-mode effect
+  const latestValue = useRef(value)
+  latestValue.current = value
 
+  // When entering edit mode: set plain text content and focus with cursor at end.
+  // Intentionally depends only on isEditing — we do NOT want to re-run this when
+  // value changes mid-edit, as that would clobber the user's in-progress typing.
   useEffect(() => {
-    if (isEditing && ref.current) {
-      ref.current.focus()
-      // Place cursor at end
-      const range = document.createRange()
-      const sel = window.getSelection()
-      range.selectNodeContents(ref.current)
-      range.collapse(false)
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    }
-  }, [isEditing])
+    if (!isEditing || !ref.current) return
+    ref.current.textContent = latestValue.current
+    ref.current.focus()
+    const range = document.createRange()
+    range.selectNodeContents(ref.current)
+    range.collapse(false)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+  }, [isEditing]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync external value into DOM when not editing
-  useEffect(() => {
-    const el = ref.current
-    if (!el || isEditing) return
-    if (el.textContent !== value) {
-      el.textContent = value
+  const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
+    const newVal = e.currentTarget.textContent || ""
+    setIsEditing(false)
+    onChange(newVal)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLSpanElement>) => {
+    if (!multiline && e.key === "Enter") {
+      e.preventDefault()
+      e.currentTarget.blur()
     }
-  }, [value, isEditing])
+  }
 
   if (!isEditing) {
     return (
@@ -168,18 +176,8 @@ function EditableText({ value, onChange, className, multiline, renderMarkdown }:
     )
   }
 
-  const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
-    setIsEditing(false)
-    onChange(e.currentTarget.textContent || "")
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLSpanElement>) => {
-    if (!multiline && e.key === "Enter") {
-      e.preventDefault()
-      e.currentTarget.blur()
-    }
-  }
-
+  // Editing span — no dangerouslySetInnerHTML, content is set via ref in the effect above.
+  // This prevents React from resetting the DOM on re-renders while the user types.
   return (
     <span
       ref={ref}
@@ -187,8 +185,7 @@ function EditableText({ value, onChange, className, multiline, renderMarkdown }:
       suppressContentEditableWarning={true}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      dangerouslySetInnerHTML={{ __html: value }}
-      className={`outline-none bg-slate-50 rounded px-0.5 -mx-0.5${className ? ` ${className}` : ""}`}
+      className={`outline-none bg-blue-50/40 rounded px-0.5 -mx-0.5 ring-1 ring-blue-200/60${className ? ` ${className}` : ""}`}
     />
   )
 }
