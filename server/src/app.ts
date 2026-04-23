@@ -18,7 +18,7 @@ const app = express()
 
 // Security
 app.use(helmet())
-const allowedOrigins = [env.CLIENT_URL, 'http://localhost:3000', 'http://127.0.0.1:3000']
+const allowedOrigins = [env.CLIENT_URL, '*']
 app.use(
   cors({
     origin: (origin, cb) => {

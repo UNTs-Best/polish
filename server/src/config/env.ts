@@ -28,7 +28,7 @@ const envSchema = z.object({
 
   GOOGLE_AI_API_KEY: z.string(),
 
-  CLIENT_URL: z.string().default('http://localhost:3000'),
+  CLIENT_URL: z.string().default('http://localhost:*'),
 })
 
 export const env = envSchema.parse(process.env)
