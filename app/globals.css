@@ -77,8 +77,8 @@
 }
 
 @theme inline {
-  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-serif: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: var(--font-instrument-sans);
+  --font-serif: var(--font-instrument-serif);
   --font-mono: var(--font-geist-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -126,6 +126,6 @@
     @apply bg-background text-foreground;
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: var(--font-instrument-serif);
   }
 }
