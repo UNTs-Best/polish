@@ -5,14 +5,6 @@ import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Undo, Download, Check, ArrowLeft, HelpCircle, Clock, Upload, User, LogOut, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { AIChat } from "@/components/ai-chat"
 import { VersionHistory } from "@/components/version-history"
 import { ExportDialog } from "@/components/export-dialog"
@@ -224,6 +216,19 @@ function EditorPageInner() {
   }, [router])
 
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showProfileMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [showProfileMenu])
 
   const handleSignOut = async () => {
     setIsSigningOut(true)
@@ -717,43 +722,41 @@ function EditorPageInner() {
               </Button>
             </ExportDialog>
             {user && (
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 cursor-pointer hover:bg-muted transition-colors"
-                    disabled={isSigningOut}
-                  >
-                    <User className="w-4 h-4" />
-                    <span className="max-w-[120px] truncate">
-                      {isSigningOut ? "Signing out..." : (user.firstName || user.name || user.email)}
-                    </span>
-                    <ChevronDown className="w-3 h-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="text-muted-foreground font-normal text-xs truncate">
-                    {user.email}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setShowApiKeySettings(true)}
-                    className="cursor-pointer"
-                  >
-                    Gemini API Key
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleSignOut}
-                    variant="destructive"
-                    className="cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div ref={profileMenuRef} className="relative">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 cursor-pointer hover:bg-muted transition-colors"
+                  disabled={isSigningOut}
+                  onClick={() => setShowProfileMenu((v) => !v)}
+                >
+                  <User className="w-4 h-4" />
+                  <span className="max-w-[120px] truncate">
+                    {isSigningOut ? "Signing out..." : (user.firstName || user.name || user.email)}
+                  </span>
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+                {showProfileMenu && (
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-popover border border-border rounded-md shadow-md z-50 py-1">
+                    <div className="px-3 py-2 text-xs text-muted-foreground truncate">{user.email}</div>
+                    <div className="border-t border-border my-1" />
+                    <button
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors cursor-pointer"
+                      onClick={() => { setShowProfileMenu(false); setShowApiKeySettings(true) }}
+                    >
+                      Gemini API Key
+                    </button>
+                    <div className="border-t border-border my-1" />
+                    <button
+                      className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors cursor-pointer flex items-center gap-2"
+                      onClick={() => { setShowProfileMenu(false); handleSignOut() }}
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
