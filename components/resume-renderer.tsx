@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 
 interface DocumentContent {
@@ -116,14 +116,6 @@ export function getTemplateOptions(): Array<{ value: TemplateName; label: string
   }))
 }
 
-function parseInlineMarkdown(text: string): string {
-  return text
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/`(.+?)`/g, "<code class=\"bg-muted px-0.5 rounded text-xs font-mono\">$1</code>")
-}
-
 interface EditableTextProps {
   value: string
   onChange: (val: string) => void
@@ -132,31 +124,25 @@ interface EditableTextProps {
   renderMarkdown?: boolean
 }
 
-function EditableText({ value, onChange, className, multiline, renderMarkdown }: EditableTextProps) {
-  const [isEditing, setIsEditing] = useState(false)
+function EditableText({ value, onChange, className, multiline }: EditableTextProps) {
   const ref = useRef<HTMLSpanElement>(null)
-  // Track the latest external value without triggering the edit-mode effect
-  const latestValue = useRef(value)
-  latestValue.current = value
+  const isFocused = useRef(false)
 
-  // When entering edit mode: set plain text content and focus with cursor at end.
-  // Intentionally depends only on isEditing — we do NOT want to re-run this when
-  // value changes mid-edit, as that would clobber the user's in-progress typing.
+  // Sync external value into the DOM only when the element is not focused,
+  // so AI-applied changes appear but in-progress typing is never clobbered.
   useEffect(() => {
-    if (!isEditing || !ref.current) return
-    ref.current.textContent = latestValue.current
-    ref.current.focus()
-    const range = document.createRange()
-    range.selectNodeContents(ref.current)
-    range.collapse(false)
-    window.getSelection()?.removeAllRanges()
-    window.getSelection()?.addRange(range)
-  }, [isEditing]) // eslint-disable-line react-hooks/exhaustive-deps
+    const el = ref.current
+    if (!el || isFocused.current) return
+    if (el.textContent !== value) {
+      el.textContent = value
+    }
+  }, [value])
+
+  const handleFocus = () => { isFocused.current = true }
 
   const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
-    const newVal = e.currentTarget.textContent || ""
-    setIsEditing(false)
-    onChange(newVal)
+    isFocused.current = false
+    onChange(e.currentTarget.textContent || "")
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLSpanElement>) => {
@@ -166,26 +152,15 @@ function EditableText({ value, onChange, className, multiline, renderMarkdown }:
     }
   }
 
-  if (!isEditing) {
-    return (
-      <span
-        onClick={() => setIsEditing(true)}
-        className={`cursor-text rounded px-0.5 -mx-0.5 hover:bg-slate-50 transition-colors${className ? ` ${className}` : ""}`}
-        dangerouslySetInnerHTML={{ __html: renderMarkdown ? parseInlineMarkdown(value) : value }}
-      />
-    )
-  }
-
-  // Editing span — no dangerouslySetInnerHTML, content is set via ref in the effect above.
-  // This prevents React from resetting the DOM on re-renders while the user types.
   return (
     <span
       ref={ref}
       contentEditable="true"
       suppressContentEditableWarning={true}
+      onFocus={handleFocus}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      className={`outline-none bg-blue-50/40 rounded px-0.5 -mx-0.5 ring-1 ring-blue-200/60${className ? ` ${className}` : ""}`}
+      className={`outline-none focus:bg-slate-50 rounded px-0.5 -mx-0.5 transition-colors${className ? ` ${className}` : ""}`}
     />
   )
 }
@@ -364,7 +339,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                         <EditableText
                           value={bullet}
                           multiline={true}
-                          renderMarkdown={true}
+                
                           onChange={(val) => {
                             const experience = documentContent.experience.map((e, i) =>
                               i === idx
@@ -439,7 +414,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                         <EditableText
                           value={bullet}
                           multiline={true}
-                          renderMarkdown={true}
+                
                           onChange={(val) => {
                             const projects = documentContent.projects.map((p, i) =>
                               i === idx
@@ -527,7 +502,7 @@ export function ResumeRenderer({ documentContent, template, onMouseUp, isTextHig
                           <EditableText
                             value={bullet}
                             multiline={true}
-                            renderMarkdown={true}
+                  
                             onChange={(val) => {
                               const leadership = documentContent.leadership!.map((l, i) =>
                                 i === idx
