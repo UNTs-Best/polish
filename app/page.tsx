@@ -21,17 +21,9 @@ import {
   ChevronUp,
 } from "lucide-react"
 import Link from "next/link"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { GuideModal } from "@/components/guide-modal"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { clearUserData } from "@/lib/user-storage"
 
 export default function LandingPage() {
@@ -61,6 +53,18 @@ export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   useEffect(() => {
     const storedUser = localStorage.getItem("polish_user")
@@ -340,19 +344,19 @@ export default function LandingPage() {
     },
     {
       q: "How does the AI editing work?",
-      a: "Polish uses Claude AI to understand your resume content in context. Select any text, choose a quick action or type a custom prompt, and Claude suggests improvements. You review every change before it's applied.",
+      a: "Polish uses Gemini AI to understand your resume content in context. Select any text, choose a quick action or type a custom prompt, and Gemini suggests improvements. You review every change before it's applied.",
     },
     {
       q: "Is my data secure?",
-      a: "Your API key is stored only in your browser's local storage and is never sent to our servers. Resume content is processed through the Claude API with your own key — we never store or access your documents.",
+      a: "Your API key is stored only in your browser's local storage and is never sent to our servers. Resume content is processed through the Gemini API with your own key — we never store or access your documents.",
     },
     {
-      q: "Do I need a Claude API key?",
-      a: "Yes. Polish connects directly to the Claude API using your personal Anthropic API key. This gives you full control over usage and costs. Get your key at console.anthropic.com.",
+      q: "Do I need a Gemini API key?",
+      a: "Yes. Polish connects directly to the Gemini API using your personal Google API key. This gives you full control over usage and costs. Get your key at aistudio.google.com.",
     },
     {
       q: "Can I use Polish without AI features?",
-      a: "Yes. You can upload, view, and export resumes in multiple formats without connecting an API key. AI editing features activate once you connect your Claude API key.",
+      a: "Yes. You can upload, view, and export resumes in multiple formats without connecting an API key. AI editing features activate once you connect your Gemini API key.",
     },
   ]
 
@@ -406,30 +410,32 @@ export default function LandingPage() {
                 </Link>
               ) : null}
               {user ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2 cursor-pointer transition-colors"
-                      disabled={isSigningOut}
-                    >
-                      <User className="w-4 h-4" />
-                      {isSigningOut ? "Signing out..." : user.name}
-                      <ChevronDown className="w-3 h-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuLabel className="text-slate-500 font-normal text-xs truncate">
-                      {user.email}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut} variant="destructive" className="cursor-pointer">
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Sign Out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <div ref={profileMenuRef} className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-lg gap-2 cursor-pointer transition-colors"
+                    disabled={isSigningOut}
+                    onClick={() => setShowProfileMenu((v) => !v)}
+                  >
+                    <User className="w-4 h-4" />
+                    {isSigningOut ? "Signing out..." : user.name}
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                  {showProfileMenu && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-md z-50 py-1">
+                      <div className="px-3 py-2 text-xs text-slate-500 truncate">{user.email}</div>
+                      <div className="border-t border-slate-200 my-1" />
+                      <button
+                        className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex items-center gap-2"
+                        onClick={() => { setShowProfileMenu(false); handleSignOut() }}
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : null}
               {user ? (
                 <Link href="/editor">
@@ -562,7 +568,7 @@ export default function LandingPage() {
               </h1>
             </div>
             <p className="text-lg text-slate-600 text-balance max-w-3xl mx-auto mb-12 leading-relaxed">
-              Upload your resume in any format. Edit with Claude AI inline. Export to PDF, DOCX, LaTeX, and more
+              Upload your resume in any format. Edit with Gemini AI inline. Export to PDF, DOCX, LaTeX, and more
               — all in one place.
             </p>
 
@@ -576,11 +582,11 @@ export default function LandingPage() {
                         <MessageSquare className="w-3 h-3 text-slate-600" />
                       </div>
                     </div>
-                    <span className="text-sm font-semibold"><span className="text-orange-600">Claude</span> <span className="text-slate-800">Assistant</span></span>
+                    <span className="text-sm font-semibold"><span className="text-blue-600">Gemini</span> <span className="text-slate-800">Assistant</span></span>
                   </div>
                   <div className="relative group">
                     <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 border border-slate-200 shadow-sm opacity-100">
-                      <span className="text-sm font-semibold text-slate-800">Claude Sonnet</span>
+                      <span className="text-sm font-semibold text-slate-800">Gemini Flash</span>
                       <ChevronDown className="w-4 h-4 text-slate-500" />
                     </div>
                   </div>
@@ -623,7 +629,7 @@ export default function LandingPage() {
                   <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2 border border-slate-200">
                     <input
                       type="text"
-                      placeholder="Ask Claude to edit your resume..."
+                      placeholder="Ask Gemini to edit your resume..."
                       className="flex-1 text-sm bg-transparent border-none outline-none placeholder-slate-500"
                       disabled
                     />
@@ -656,7 +662,7 @@ export default function LandingPage() {
               </Button>
             </div>
             <p className="text-sm text-slate-600 text-center font-medium">
-              Connected via MCP Server
+              Powered by Gemini AI
             </p>
           </div>
         </div>
@@ -860,7 +866,7 @@ export default function LandingPage() {
                 <div className="p-4 border-b border-slate-200/50">
                   <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-4 py-2">
                     <MessageSquare className="w-4 h-4 text-slate-600" />
-                    <span className="text-sm font-semibold"><span className="text-orange-600">Claude</span> Sonnet</span>
+                    <span className="text-sm font-semibold"><span className="text-blue-600">Gemini</span> Flash</span>
                   </div>
                 </div>
 
@@ -924,7 +930,7 @@ export default function LandingPage() {
                       {chatInputText && <span>{chatInputText}</span>}
                       {showChatCaret && <span className="animate-pulse">|</span>}
                       {!chatInputText && !showChatCaret && (
-                        <span className="text-slate-400">Ask Claude to edit...</span>
+                        <span className="text-slate-400">Ask Gemini to edit...</span>
                       )}
                     </div>
                     <Send className="w-4 h-4 text-slate-700" />
@@ -956,8 +962,8 @@ export default function LandingPage() {
               },
               {
                 icon: MessageSquare,
-                title: "Claude AI Editing",
-                desc: "Inline AI suggestions via MCP Server. ATS optimization, proofreading, and more.",
+                title: "Gemini AI Editing",
+                desc: "Inline AI suggestions powered by Gemini. ATS optimization, proofreading, and more.",
                 index: 1,
                 animatedText: "Bullet improved",
               },
@@ -1027,7 +1033,7 @@ export default function LandingPage() {
               {
                 step: "2",
                 title: "Connect",
-                desc: "Link to Claude via MCP Server to enable AI features.",
+                desc: "Link your Gemini API key to enable AI features.",
                 icon: Zap,
               },
               {
@@ -1101,7 +1107,7 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold text-slate-900 mb-4">Ready to polish your resume?</h2>
           <p className="text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
-            Upload any format. Edit with Claude AI. Export to anything. All in your browser, all under your control.
+            Upload any format. Edit with Gemini AI. Export to anything. All in your browser, all under your control.
           </p>
           <Link href={user ? "/editor" : "/signin"}>
             <Button
@@ -1119,7 +1125,7 @@ export default function LandingPage() {
             </div>
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4" />
-              <span>Claude AI Integration</span>
+              <span>Gemini AI Integration</span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
@@ -1137,7 +1143,7 @@ export default function LandingPage() {
               <div className="text-2xl font-bold bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight opacity-100">
                 Polish
               </div>
-              <p className="text-xs text-slate-500 mt-1">AI-powered resume editing via MCP Server</p>
+              <p className="text-xs text-slate-500 mt-1">AI-powered resume editing</p>
             </div>
             <div className="flex items-center gap-3">
               {["PDF", "DOCX", "RTF", "TXT", "LaTeX"].map((fmt) => (
