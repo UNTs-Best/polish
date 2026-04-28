@@ -41,13 +41,8 @@ export default function LandingPage() {
   const [demoStep, setDemoStep] = useState(0)
   const [highlightedText, setHighlightedText] = useState("")
   const [showExportSuccess, setShowExportSuccess] = useState(false)
-  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 })
-  const [showCursor, setShowCursor] = useState(false)
-  const [isSelecting, setIsSelecting] = useState(false)
   const [chatInputText, setChatInputText] = useState("")
   const [showChatCaret, setShowChatCaret] = useState(false)
-  const [isScrolling, setIsScrolling] = useState(false)
-  const [scrollPosition, setScrollPosition] = useState(0)
   const [showAssistantTyping, setShowAssistantTyping] = useState(false)
   const [featureAnimations, setFeatureAnimations] = useState([false, false, false, false])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -195,99 +190,64 @@ export default function LandingPage() {
   const startDemo = () => {
     setShowDemoModal(true)
     setDemoStep(0)
-    setShowCursor(true)
     setChatInputText("")
     setShowChatCaret(false)
-    setScrollPosition(0)
-    setTimeout(() => runDemoSequence(), 1000)
+    setHighlightedText("")
+    setShowAssistantTyping(false)
+    setShowExportSuccess(false)
+    setTimeout(() => runDemoSequence(0), 600)
   }
 
-  const runDemoSequence = () => {
-    if (demoStep >= demoSequence.length) {
+  const runDemoSequence = (step: number) => {
+    if (step >= demoSequence.length) {
       setTimeout(() => {
         setShowExportSuccess(true)
         setTimeout(() => {
           setShowDemoModal(false)
           setShowExportSuccess(false)
           setDemoStep(0)
-          setShowCursor(false)
-          setIsSelecting(false)
           setChatInputText("")
-          setShowChatCaret(false)
-          setScrollPosition(0)
+          setHighlightedText("")
         }, 2000)
-      }, 1000)
+      }, 800)
       return
     }
 
-    const step = demoSequence[demoStep]
+    const current = demoSequence[step]
 
-    setIsScrolling(true)
-    setCursorPosition({ x: 400, y: 200 })
+    // 1. Highlight the target text
+    setHighlightedText(current.highlight)
 
-    let currentScroll = 0
-    const scrollInterval = setInterval(() => {
-      currentScroll += 20
-      setScrollPosition(currentScroll)
-      setCursorPosition({ x: 400, y: 200 + currentScroll * 0.5 })
+    // 2. After a pause, start typing the user message
+    setTimeout(() => {
+      setShowChatCaret(true)
+      let i = 0
+      const typeTimer = setInterval(() => {
+        if (i < current.user.length) {
+          setChatInputText(current.user.slice(0, i + 1))
+          i++
+        } else {
+          clearInterval(typeTimer)
+          setShowChatCaret(false)
 
-      if (currentScroll >= 300) {
-        clearInterval(scrollInterval)
-        setIsScrolling(false)
-
-        setTimeout(() => {
-          const targetY = step.section === "experience" ? 450 : 250
-          setCursorPosition({ x: 350, y: targetY })
-
+          // 3. AI typing indicator
           setTimeout(() => {
-            setIsSelecting(true)
-            setHighlightedText(step.highlight)
+            setShowAssistantTyping(true)
 
+            // 4. Apply the edit, show AI response
             setTimeout(() => {
-              setCursorPosition({ x: 600, y: targetY })
+              setShowAssistantTyping(false)
+              setDemoStep(step + 1)
+              setHighlightedText("")
+              setChatInputText("")
 
-              setTimeout(() => {
-                setIsSelecting(false)
-
-                setTimeout(() => {
-                  setCursorPosition({ x: 600, y: 650 })
-                  setShowChatCaret(true)
-
-                  let i = 0
-                  const typeTimer = setInterval(() => {
-                    if (i < step.user.length) {
-                      setChatInputText(step.user.slice(0, i + 1))
-                      i++
-                    } else {
-                      clearInterval(typeTimer)
-
-                      setTimeout(() => {
-                        setShowChatCaret(false)
-                        setShowAssistantTyping(true)
-
-                        setTimeout(() => {
-                          setShowAssistantTyping(false)
-                          setHighlightedText("")
-
-                          setTimeout(() => {
-                            setChatInputText("")
-
-                            setTimeout(() => {
-                              setDemoStep((prev) => prev + 1)
-                              setTimeout(runDemoSequence, 1000)
-                            }, 1000)
-                          }, 1000)
-                        }, 2000)
-                      }, 1000)
-                    }
-                  }, 80)
-                }, 500)
-              }, 1000)
-            }, 1000)
-          }, 500)
-        }, 500)
-      }
-    }, 100)
+              // 5. Pause, then run next step
+              setTimeout(() => runDemoSequence(step + 1), 1800)
+            }, 2000)
+          }, 600)
+        }
+      }, 55)
+    }, 900)
   }
 
   const handleOpenEditor = () => {
@@ -672,20 +632,6 @@ export default function LandingPage() {
       {showDemoModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
-            {showCursor && (
-              <div
-                className={`absolute w-0.5 h-5 bg-slate-800 z-10 transition-all duration-500 shadow-lg ${
-                  isSelecting ? "w-1 bg-slate-600" : ""
-                }`}
-                style={{
-                  left: `${cursorPosition.x}px`,
-                  top: `${cursorPosition.y}px`,
-                  transform: "translate(-50%, -50%)",
-                  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
-                }}
-              />
-            )}
-
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <div className="flex items-center gap-3">
                 <h2 className="text-xl font-semibold">Polish Live Demo</h2>
@@ -696,11 +642,9 @@ export default function LandingPage() {
               <button
                 onClick={() => {
                   setShowDemoModal(false)
-                  setShowCursor(false)
-                  setIsSelecting(false)
                   setChatInputText("")
-                  setShowChatCaret(false)
-                  setScrollPosition(0)
+                  setHighlightedText("")
+                  setDemoStep(0)
                 }}
                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
               >
@@ -709,13 +653,7 @@ export default function LandingPage() {
             </div>
 
             <div className="flex h-[70vh]">
-              <div
-                className="flex-1 p-6 bg-slate-50 overflow-y-auto"
-                style={{
-                  transform: `translateY(-${scrollPosition}px)`,
-                  transition: isScrolling ? "transform 0.1s ease-out" : "none",
-                }}
-              >
+              <div className="flex-1 p-6 bg-slate-50 overflow-y-auto">
                 <div className="bg-white p-8 rounded-lg shadow-sm max-w-2xl mx-auto">
                   <div className="text-center mb-6">
                     <h1 className="text-3xl font-bold mb-2">Jake Ryan</h1>
