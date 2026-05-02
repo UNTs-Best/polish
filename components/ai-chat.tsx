@@ -85,6 +85,13 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
     }
   }, [selectedText])
 
+  const formatErrorMessage = (error: unknown, fallback: string): string => {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      return "Unable to reach the server. Check your connection and try again."
+    }
+    return error instanceof Error ? error.message : fallback
+  }
+
   const handleSendMessage = async (messageText?: string, contextText?: string) => {
     const messageToSend = messageText || input
     if (!messageToSend.trim() || isLoading) return
@@ -141,17 +148,11 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       onClearSelection?.()
     } catch (error) {
       setShowTypingDots(false)
-      const errorMsg =
-        error instanceof TypeError && error.message === "Failed to fetch"
-          ? "Unable to reach the server. Check your connection and try again."
-          : error instanceof Error
-            ? error.message
-            : "Something went wrong. Please try again."
       setMessages((prev) => [
         ...prev,
         {
           role: "error",
-          content: errorMsg,
+          content: formatErrorMessage(error, "Something went wrong. Please try again."),
           timestamp: new Date(),
         },
       ])
@@ -180,15 +181,9 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       setMessages((prev) => [...prev, { role: "assistant", content, timestamp: new Date() }])
     } catch (error) {
       setShowTypingDots(false)
-      const errorMsg =
-        error instanceof TypeError && error.message === "Failed to fetch"
-          ? "Unable to reach the server. Check your connection and try again."
-          : error instanceof Error
-            ? error.message
-            : "Failed to score resume."
       setMessages((prev) => [
         ...prev,
-        { role: "error", content: errorMsg, timestamp: new Date() },
+        { role: "error", content: formatErrorMessage(error, "Failed to score resume."), timestamp: new Date() },
       ])
     } finally {
       setIsLoading(false)
@@ -214,15 +209,9 @@ export const AIChat = forwardRef<{ sendMessage: (prompt: string, text: string) =
       setMessages((prev) => [...prev, { role: "assistant", content: data.summary, timestamp: new Date() }])
     } catch (error) {
       setShowTypingDots(false)
-      const errorMsg =
-        error instanceof TypeError && error.message === "Failed to fetch"
-          ? "Unable to reach the server. Check your connection and try again."
-          : error instanceof Error
-            ? error.message
-            : "Failed to summarize resume."
       setMessages((prev) => [
         ...prev,
-        { role: "error", content: errorMsg, timestamp: new Date() },
+        { role: "error", content: formatErrorMessage(error, "Failed to summarize resume."), timestamp: new Date() },
       ])
     } finally {
       setIsLoading(false)
