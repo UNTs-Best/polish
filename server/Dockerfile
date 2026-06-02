@@ -7,7 +7,7 @@ RUN apk add --no-cache openssl
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci
+RUN npm install
 RUN npx prisma generate
 
 COPY . .
@@ -25,7 +25,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci && npx prisma generate
+RUN npm install && npx prisma generate
 
 COPY --from=builder /app/dist ./dist
 
