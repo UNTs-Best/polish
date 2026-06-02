@@ -16,6 +16,8 @@ import { errorHandler } from './middleware/error.js'
 
 const app = express()
 
+app.set('trust proxy', 1)
+
 // Security
 app.use(helmet())
 const allowedOrigins = [env.CLIENT_URL, '*']
